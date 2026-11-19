@@ -7,10 +7,10 @@ integração com `sitrus-api` (biblioteca + sessão), `sitrus-player`
 ## Rodar
 
 ```sh
-cargo run -p sitrus                  # janela principal
-cargo run -p sitrus -- --gallery     # galeria do design system (sitrus-ui)
-cargo run -p sitrus -- --login-manual
-cargo run -p sitrus -- --version     # -V / --help
+cargo run -p sitrus-app                  # janela principal
+cargo run -p sitrus-app -- --gallery     # galeria do design system (sitrus-ui)
+cargo run -p sitrus-app -- --login-manual
+cargo run -p sitrus-app -- --version     # -V / --help
 ```
 
 Requer um display Wayland/X11 (a janela abre com `eframe::run_native`, tema

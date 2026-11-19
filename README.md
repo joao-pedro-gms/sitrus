@@ -185,6 +185,21 @@ Requisitos: toolchain Rust estável (ver `rust-toolchain.toml`) e cabeçalhos AL
 cargo build --release
 ```
 
+### AppImage local (para testar nesta máquina)
+
+```bash
+cargo build --release
+scripts/build-appimage-local.sh ~/Downloads/Sitrus-x86_64.AppImage
+```
+
+Essa AppImage usa as bibliotecas do sistema (glibc, GTK3, ALSA, X11/Wayland) e
+não embute WebKitGTK: serve para rodar na distro onde foi construída, com login
+manual (`--login-manual`). A AppImage **do release** (CI, ubuntu-22.04) é a
+portátil, com WebKitGTK embutido. Em nenhuma das duas o engine DRM consegue fazer
+o bootstrap do Electron: ele precisa de `engine/node_modules` num diretório
+gravável, e o mount da AppImage é somente leitura — para validar áudio use o
+binário de `target/release/` no checkout do repositório.
+
 ### Variante com webview (login embutido)
 
 A janela de login usa WebKitGTK via `wry`. Para compilá-la, é preciso o pacote de

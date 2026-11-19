@@ -23,7 +23,8 @@ mod webview_probe {
         time::Duration,
     };
 
-    use gtk::{Inhibit, prelude::*};
+    use gtk::glib::Propagation;
+    use gtk::prelude::*;
     use wry::{WebView, WebViewBuilder, WebViewBuilderExtUnix};
 
     const APPLE_URL: &str = "https://music.apple.com";
@@ -51,7 +52,7 @@ mod webview_probe {
         window.set_default_size(960, 640);
         window.connect_delete_event(|_, _| {
             gtk::main_quit();
-            Inhibit(false)
+            Propagation::Proceed
         });
         let container = gtk::Box::new(gtk::Orientation::Vertical, 0);
         window.add(&container);

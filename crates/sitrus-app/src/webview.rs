@@ -7,7 +7,8 @@
 //!
 //! - `SITRUS_LOGIN_OK` — o media-user-token apareceu na jarra de cookies; o
 //!   subprocesso já gravou a sessão em disco (`Session::save`, 0600) e o pai
-//!   relê com `Session::load` e entrega ao worker de rede.
+//!   relê com `Session::load` e entrega ao worker de rede como
+//!   `NetCommand::SetSession` (a UI reage ao `NetEvent::SessionReady`).
 //! - `SITRUS_LOGIN_CLOSED` — o usuário fechou a janela sem concluir a entrada.
 //!
 //! Consulta os cookies do player a cada 2 s; nenhum valor de cookie/token é
@@ -29,7 +30,7 @@ use tao::{
 };
 use wry::WebViewBuilder;
 
-use crate::net::NetEvent;
+use crate::net::{NetCommand, NetEvent};
 use sitrus_api::Session;
 
 /// URL do player web (origem onde o media-user-token é definido).
@@ -41,9 +42,18 @@ const MARKER_OK: &str = "SITRUS_LOGIN_OK";
 /// Marcador de janela fechada sem entrada em stdout.
 const MARKER_CLOSED: &str = "SITRUS_LOGIN_CLOSED";
 
-/// Inicia o subprocesso de login e acompanha stdout em thread dedicada,
-/// publicando os eventos correspondentes na UI. Não bloqueia a thread da UI.
-pub fn spawn_login_process(event_tx: Sender<NetEvent>) {
+/// Inicia o subprocesso de login e acompanha stdout em thread dedicada.
+///
+/// - `SITRUS_LOGIN_OK`: a thread relê `Session::load` do disco (o subprocesso
+///   gravou a sessão antes do marcador) e entrega a sessão ao worker de rede
+///   via `NetCommand::SetSession`; a UI reage ao `NetEvent::SessionReady`
+///   correspondente, relendo o estado do disco.
+/// - `SITRUS_LOGIN_CLOSED` ou saída sem marcador: publica `NetEvent::LoginError`
+///   na UI pelos `events`.
+///
+/// Não bloqueia a thread da UI. Nenhum valor de cookie/token é registrado em
+/// log ou enviado pelo stdout (só marcadores de status).
+pub fn spawn_login_process(command_tx: Sender<NetCommand>, event_tx: Sender<NetEvent>) {
     let Ok(executable) = std::env::current_exe() else {
         let _ = event_tx.send(NetEvent::LoginError(
             "não foi possível localizar o executável para abrir o login".to_owned(),
@@ -75,8 +85,11 @@ pub fn spawn_login_process(event_tx: Sender<NetEvent>) {
                         MARKER_OK => {
                             match Session::load() {
                                 Ok(Some(session)) if session.media_user_token.is_some() => {
-                                    let _ = event_tx.send(NetEvent::LoginSuccess(session));
-                                    outcome_sent = true;
+                                    // Sucesso: a sessão vai ao worker de rede
+                                    // (`SetSession` persiste o cliente e inicia
+                                    // a carga da biblioteca); nada do token
+                                    // trafega em texto puro.
+                                    let _ = command_tx.send(NetCommand::SetSession(session));
                                 }
                                 _ => {
                                     let _ = event_tx.send(NetEvent::LoginError(
@@ -84,9 +97,9 @@ pub fn spawn_login_process(event_tx: Sender<NetEvent>) {
                                          pôde ser lida do disco"
                                             .to_owned(),
                                     ));
-                                    outcome_sent = true;
                                 }
                             }
+                            outcome_sent = true;
                             break;
                         }
                         MARKER_CLOSED => {

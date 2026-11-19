@@ -108,8 +108,10 @@ struct NetState {
     last_songs: Vec<SongRow>,
 }
 
-/// Cria o worker e devolve os canais (`comandos → worker`, `eventos → UI`).
-pub fn spawn() -> (Sender<NetCommand>, Receiver<NetEvent>) {
+/// Cria o worker e devolve os canais (`comandos → worker`, `eventos → UI`)
+/// e um sender extra de eventos para produtores fora do worker: o watcher do
+/// subprocesso de login por webview publica em `net_rx` a partir dele.
+pub fn spawn() -> (Sender<NetCommand>, Receiver<NetEvent>, Sender<NetEvent>) {
     let (command_tx, command_rx) = channel();
     let (event_tx, event_rx) = channel();
     let worker_event_tx = event_tx.clone();
@@ -122,7 +124,7 @@ pub fn spawn() -> (Sender<NetCommand>, Receiver<NetEvent>) {
             "thread de rede não pôde ser iniciada".to_owned(),
         ));
     }
-    (command_tx, event_rx)
+    (command_tx, event_rx, event_tx)
 }
 
 /// Loop do worker: um runtime tokio local atende as futures (`LibraryClient`

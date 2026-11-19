@@ -14,6 +14,11 @@
 #
 # A versão é passada pela esteira via macro: rpmbuild -D "sitrus_version 0.1.0".
 
+# Binário pré-compilado: sem fontes Rust no build tree do rpmbuild, o
+# find-debuginfo geraria %files vazio (erro "Arquivo %files vazio
+# .../debugsourcefiles.list"). Desativa o subpacote de debug.
+%global debug_package %{nil}
+
 Name:           sitrus
 Version:        %{?sitrus_version}%{!?sitrus_version:0.0.0}
 Release:        1
@@ -36,7 +41,8 @@ Requires:       webkit2gtk4.1
 %description
 Cliente nativo (Rust + egui) para Apple Music no Linux: login embutido por
 webview usando os cookies da sessão do usuário, navegação pela biblioteca e
-playlists do usuário e player completo com fila, seek e volume.
+playlists do usuário e player com play/pause, próxima/anterior, seek e
+volume (fila em exibição).
 
 Projeto independente, não afiliado à Apple. Licença MIT.
 

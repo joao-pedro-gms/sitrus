@@ -134,6 +134,10 @@ pub struct App {
     net_tx: Sender<NetCommand>,
     /// Eventos do worker de rede (e do subprocesso de login).
     net_rx: Receiver<NetEvent>,
+    /// Sender de eventos para produtores fora do worker: o watcher do
+    /// subprocesso de login por webview publica em `net_rx` a partir dele.
+    #[cfg(feature = "webview")]
+    login_event_tx: Sender<NetEvent>,
     /// Faixas da biblioteca.
     songs: Vec<SongRow>,
     /// A biblioteca coube inteira dentro dos limiares de paginação.
@@ -176,7 +180,7 @@ impl App {
         if let Some(zoom) = settings.ui_scale {
             ctx.set_zoom_factor(zoom.clamp(0.5, 3.0));
         }
-        let (net_tx, net_rx) = spawn_net();
+        let (net_tx, net_rx, _login_event_tx) = spawn_net();
 
         let mut app = Self {
             settings,
@@ -185,6 +189,8 @@ impl App {
             session: None,
             net_tx,
             net_rx,
+            #[cfg(feature = "webview")]
+            login_event_tx: _login_event_tx,
             songs: Vec::new(),
             songs_complete: true,
             songs_state: SectionState::Loaded,
@@ -257,13 +263,22 @@ impl App {
 
     /// Instala uma sessão recém-criada (manual ou webview).
     fn apply_session(&mut self, session: Session) {
+        self.adopt_session(&session);
+        let _ = self.net_tx.send(NetCommand::SetSession(session));
+    }
+
+    /// Aplica à UI a presença de uma sessão recém-instalada no worker.
+    ///
+    /// O comando `SetSession` correspondente pode partir daqui (login manual)
+    /// ou do watcher do login por webview, que entrega a sessão relida do
+    /// disco antes de o worker publicar `SessionReady`.
+    fn adopt_session(&mut self, session: &Session) {
         self.session = Some(session.clone());
         self.songs.clear();
         self.playlists.clear();
         self.set_library_loading();
         self.screen = Screen::Home;
         self.login.reset();
-        let _ = self.net_tx.send(NetCommand::SetSession(session));
         self.set_toast(
             BannerKind::Info,
             "Sessão carregada: biblioteca em preparo…".to_owned(),
@@ -313,7 +328,7 @@ impl App {
         self.login.message = None;
         #[cfg(feature = "webview")]
         if !self.login.webview_open {
-            crate::webview::spawn_login_process(self.net_tx.clone());
+            crate::webview::spawn_login_process(self.net_tx.clone(), self.login_event_tx.clone());
             self.login.webview_open = true;
         }
         #[cfg(not(feature = "webview"))]
@@ -344,7 +359,21 @@ impl App {
     /// Processa um evento do worker.
     fn apply_net_event(&mut self, event: NetEvent, ctx: &Context) {
         match event {
-            NetEvent::SessionReady => {}
+            NetEvent::SessionReady => {
+                // O worker instalou uma sessão que a UI não conhece: foi o
+                // watcher do subprocesso de login por webview relendo
+                // `Session::load()` do disco e entregando a sessão como
+                // `SetSession` (o subprocesso gravou antes de emitir o
+                // marcador). Nos demais caminhos (restauro, manual, recarga)
+                // o `SetSession` parte da própria UI e `self.session` já
+                // reflete a sessão — nada muda.
+                if self.login.webview_open
+                    && let Ok(Some(session)) = Session::load()
+                    && session.media_user_token.is_some()
+                {
+                    self.adopt_session(&session);
+                }
+            }
             NetEvent::LoginError(message) => {
                 self.login.message = Some((BannerKind::Error, message));
                 self.login.webview_open = false;

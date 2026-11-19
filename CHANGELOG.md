@@ -13,9 +13,12 @@ Primeira versão pública.
 
 - Login embutido no Apple Music via webview (WebKitGTK), com captura de cookies e
   `media-user-token` persistidos localmente em arquivo com permissão `0600`.
-- Biblioteca: listagem e navegação por artistas, álbuns e músicas da conta do usuário.
-- Playlists: listagem, abertura e reprodução da playlist inteira como fila.
-- Player: play/pause, próxima/anterior, seek, volume e fila visível com reordenação.
+- Biblioteca: listagem das músicas e playlists da conta do usuário, como navegação
+  (prateleiras horizontais e modo lista). Artistas e álbuns ainda não têm tela
+  própria; abrir o conteúdo de uma playlist ainda não é suportado.
+- Player: play/pause, próxima/anterior, seek e volume; o motor de áudio toca
+  arquivos locais e streams HLS/AAC (a reprodução de faixas do catálogo da Apple
+  fica para uma versão futura). A fila é somente exibição, sem reordenação.
 - Interface nativa egui/eframe com design system próprio (tokens, temas claro e
   escuro, fonte Inter embutida, ícones Lucide).
 - Modo lista para seções grandes, além das prateleiras horizontais.

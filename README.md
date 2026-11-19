@@ -1,9 +1,9 @@
 # Sitrus
 
 Cliente nativo de Apple Music para Linux, escrito em Rust com interface egui/eframe.
-Sitrus entra na sua conta da Apple Music, mostra sua biblioteca e playlists e reproduz
-áudio com controles completos de player — tudo numa janela nativa, sem web engine na
-interface principal.
+Sitrus entra na sua conta da Apple Music, mostra sua biblioteca e playlists e
+oferece um player com controles de reprodução — tudo numa janela nativa, sem web
+engine na interface principal.
 
 > [!WARNING]
 > **Cliente não oficial.** Sitrus **não é afiliado, endossado ou patrocinado pela
@@ -18,11 +18,16 @@ interface principal.
 - **Login embutido**: uma janela webview (WebKitGTK) aponta para `music.apple.com`;
   após a autenticação, cookies e `media-user-token` são capturados e guardados
   localmente em `~/.local/share/sitrus/` (arquivo com permissão `0600`).
-- **Biblioteca**: listagem e navegação por artistas, álbuns e músicas da sua conta.
-- **Playlists**: listar e abrir suas playlists e tocar a playlist inteira como fila.
-- **Player**: play/pause, próxima/anterior, seek, volume e fila visível com reordenação.
+- **Biblioteca**: listagem das músicas e playlists da sua conta, como navegação
+  (prateleiras e modo lista). Artistas e álbuns ainda não têm tela própria, e
+  clicar numa playlist ainda não abre o conteúdo dela.
+- **Player**: play/pause, próxima/anterior, seek e volume. O motor de áudio
+  toca arquivos locais e streams HLS/AAC; a reprodução de faixas do catálogo da
+  Apple ainda não está disponível nesta versão (sem fonte de stream integrada).
+  A fila é somente exibição — sem seleção, reordenação ou clique.
 
-Fora do escopo por enquanto: busca no catálogo global, letras, favoritos, download
+Fora do escopo por enquanto: reprodução de faixas do Apple Music dentro do app,
+telas de artistas/álbuns, busca no catálogo global, letras, favoritos, download
 offline, rádio e recomendações. Veja o [CHANGELOG](CHANGELOG.md) e o
 [plano de entrega](docs/plan.md).
 
@@ -48,8 +53,8 @@ chmod +x Sitrus-x86_64.AppImage
 ./Sitrus-x86_64.AppImage
 ```
 
-O login embutido via webview exige **WebKitGTK 4.1** instalado no sistema
-(`webkit2gtk4.1` no Fedora). Sem ele, o app abre mas a janela de login não funciona.
+O login embutido via webview usa WebKitGTK 4.1: no RPM ele é resolvido como
+dependência (`webkit2gtk4.1`); no AppImage a biblioteca já vem embutida no pacote.
 
 ### RPM (Fedora)
 
@@ -89,11 +94,10 @@ padrão (sem a feature) continua funcionando.
 | Tecla | Ação |
 | --- | --- |
 | `Espaço` | Reproduzir / pausar |
-| `Ctrl` + `→` | Próxima faixa |
-| `Ctrl` + `←` | Faixa anterior |
-| `Shift` + `→` / `Shift` + `←` | Avançar / voltar 10 s |
+| `←` / `→` | Voltar / avançar 10 s |
 | `↑` / `↓` | Aumentar / diminuir volume |
-| `Ctrl` + `Q` | Mostrar / ocultar a fila |
+| `Ctrl` + `F` | Focar o campo de busca |
+| `Ctrl` + `Q` | Sair do aplicativo |
 
 Os atalhos funcionam com a janela do app focada; atalhos globais de mídia não fazem
 parte da v0.1.0.

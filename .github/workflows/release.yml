@@ -19,8 +19,9 @@ jobs:
           VER="${GITHUB_REF_NAME#v}"
           echo "version=${VER}" >> "$GITHUB_OUTPUT"
       - name: Write release body
+        env:
+          VER: ${{ steps.ver.outputs.version }}
         run: |
-          VER="${{ steps.ver.outputs.version }}"
           {
             echo "## Sitrus ${VER}"
             echo
@@ -39,13 +40,13 @@ jobs:
             echo 'dnf install ./sitrus-*.rpm'
             echo '```'
             echo
-            echo 'O app pede login embutido no primeiro início (webview WebKitGTK'
-            echo 'embutida no AppImage; no RPM ela vem do pacote `webkit2gtk4.1`).'
+            echo "O app pede login embutido no primeiro início (webview WebKitGTK"
+            echo "embutida no AppImage; no RPM ela vem do pacote \`webkit2gtk4.1\`)."
             echo
             echo '---'
             echo
-            echo 'Sumários de verificação: `SHA256SUMS` contém o SHA-256 das'
-            echo 'artes (AppImage e RPM).'
+            echo "Sumários de verificação: \`SHA256SUMS\` contém o SHA-256 das"
+            echo "artes (AppImage e RPM)."
           } > release-notes.md
       - uses: actions/upload-artifact@v4
         with:

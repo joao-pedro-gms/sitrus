@@ -1,17 +1,51 @@
 # Spike EME / WebKitGTK
 
-**Status: bloqueado antes da observação no WebKitGTK.** Este arquivo ainda não contém veredito `EME_OK` ou `EME_UNSUPPORTED`: nenhum probe renderizado rodou no CI e não há saída de EME/Apple Music observada. Não inferir suporte pelo changelog, pelas strings da biblioteca nem pelo CDM instalado.
+**Status: veredito observado no CI — `EME_UNSUPPORTED`.** O probe renderizado rodou no WebKitGTK do CI e a API EME não existe na página: nem Widevine, nem ClearKey (`API_UNAVAILABLE` nos dois). A reprodução de faixa completa por engine baseada em wry/WebKitGTK está descartada no lado EME; a lane de reprodução DRM será sidecar Electron castlabs com CDM Widevine pinado (seção "Implicação para o node engine").
 
-## Evidência local observada
+## Run observado
 
-`cargo build -p eme-probe` terminou com exit 0:
+- Run: [`44568466443`](https://github.com/joaopedrogms/sitrus/actions/runs/44568466443), `Spike EME / WebKitGTK`, SHA `1b92d36`, workflow_dispatch em `main`.
+- Verificação: `gh run view 44568466443 --json conclusion,status` → `{"conclusion":"success","status":"completed"}`.
+- Artifact `eme-probe-log`: `xvfb-run -a cargo run --locked -p eme-probe --features webview`, Ubuntu 22.04, WebKitGTK 4.1 instalado por apt, wry 0.57.3 + gtk 0.18.2; build terminou `Finished \`dev\` profile ... in 50.49s`.
+
+## Saída literal do probe (artifact `eme-probe-log/eme-probe.log`, linhas finais)
 
 ```text
-Compiling eme-probe v0.1.0 (/home/joaopedrogms/Documentos/Projetos/Sitrus/spike/eme-probe)
-Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.20s
+(eme-probe:3943): dbind-WARNING **: 16:40:30.115: AT-SPI: Error retrieving accessibility bus address: org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files
+EME_PROBE keySystem=com.widevine.alpha result=API_UNAVAILABLE
+EME_PROBE keySystem=org.w3.clearkey result=API_UNAVAILABLE
+EME_PROBE verdict=EME_UNSUPPORTED widevine=API_UNAVAILABLE clearkey=API_UNAVAILABLE
+APPLE_PAGE status=navigating url=https://music.apple.com
+APPLE_PAGE status=loaded
+APPLE_DRM_CONSOLE summary=none observed_for_s=20
+EME_PROBE_COMPLETE
 ```
 
-`cargo build --locked -p eme-probe --features webview` terminou com exit 101 antes de compilar o probe. A máquina não encontra também dependências de desenvolvimento GLib/GTK, além de WebKitGTK/D-Bus:
+## O que o console reportou em music.apple.com
+
+A página navegou, carregou (`APPLE_PAGE status=loaded`) e ficou observada por 20 s com hook em `console.error/console.warn/window.error/unhandledrejection` filtrando termos `widevine|drm|eme|encrypted media|key system|keysystem|media key`. O console reportou **nada** relacionado a DRM: `APPLE_DRM_CONSOLE summary=none observed_for_s=20`. Ou seja: a página carrega em WebKitGTK e não reclama de DRM, mas o veredito vem da ausência da própria superfície EME, não de erro de playback.
+
+## Veredito: EME_UNSUPPORTED
+
+- `result=API_UNAVAILABLE` significa que `navigator.requestMediaKeySystemAccess` não existe no WebKitGTK do CI — o probe não chegou a negociar nenhum key system (o `NotSupported` do EME não apareceu; a API inteira está ausente).
+- Isso vale também para ClearKey, que não depende de CDM proprietário: o que falta é a superfície EME do WebKitGTK, não licenciamento Widevine.
+- Escopo da evidência: observado no WebKitGTK 4.1 do Ubuntu 22.04 (CI). Verificação local na estação Fedora 45 não é possível (`cargo build --locked -p eme-probe --features webview` falha antes da compilação por ausência das libs de desenvolvimento GLib/GTK sem sudo — ver evidência local abaixo). Não inferir suporte por changelog, strings de biblioteca ou CDM instalado.
+
+## Implicação para o node engine
+
+`EME_UNSUPPORTED` ⇒ **o engine não vai a wry/WebKitGTK com EME**; segue a lane de sidecar:
+
+1. Engine de reprodução com DRM: **sidecar castlabs Electron com CDM Widevine pinado em `4.10.3112.0`**, como o Sidra faz nesta máquina. O node engine deve integrar por esse caminho, sem tentar EME no webview embutido.
+2. O CDM é somente referência local; não redistribuir. Manter postura de wrapper com CDM próprio; não extrair chaves de conteúdo.
+3. Para telas de artista/álbum/playlist e demais UI web, o webview (wry/WebKitGTK) continua válido — a página carrega sem erro (`status=loaded`, console limpo). A restrição é apenas reprodução DRM.
+
+## Correção aplicada durante a observação
+
+A primeira execução (run `44567921390`, SHA `ab45233`) falhou em `spike/eme-probe/src/main.rs` com `error[E0432]: unresolved import 'gtk::Inhibit'` (`no 'Inhibit' in the root`) — o tipo `Inhibit` não existe no gtk/glib 0.18. Corrigido em `1b92d36`: `use gtk::{Inhibit, prelude::*};` → `use gtk::glib::Propagation;` + `Propagation::Proceed` no `connect_delete_event`. Nenhuma outra alteração de escopo (crates/ e Cargo.toml intactos).
+
+## Evidência local (anterior à observação)
+
+`cargo build -p eme-probe` (sem feature webview) terminou exit 0; `cargo build --locked -p eme-probe --features webview` falha com exit 101 antes de compilar o probe — a máquina não tem dependências de desenvolvimento GLib/GTK/WebKitGTK/D-Bus e não há sudo para instalá-las:
 
 ```text
 error: failed to run custom build command for `gobject-sys v0.18.0`
@@ -20,18 +54,4 @@ Package gobject-2.0 was not found in the pkg-config search path.
 The system library `gobject-2.0` required by crate `gobject-sys` was not found.
 ```
 
-A saída também reportou `atk`, `gio-2.0`, `glib-2.0`, `gdk-3.0`, `gdk-pixbuf-2.0`, `cairo` e `pango` ausentes. Portanto, a expectativa de falhar somente em `libdbus-sys` não se confirmou neste host; não há sudo e nada foi instalado.
-
-## CI ainda não executado
-
-O workflow novo foi validado localmente com `actionlint -shellcheck= .github/workflows/spike-eme.yml` (exit 0), mas `gh workflow list` não o encontra no default branch. O dispatch solicitado retornou literalmente:
-
-```text
-HTTP 404: workflow spike-eme.yml not found on the default branch (https://api.github.com/repos/joao-pedro-gms/sitrus/actions/workflows/spike-eme.yml)
-```
-
-Assim, não existe run ID, log/artifact nem checagem de token do artifact. Para continuar, o workflow e o probe precisam primeiro estar publicados no default branch; depois disparar `gh workflow run spike-eme.yml`, aguardar `gh run watch ID --exit-status`, verificar o artifact e substituir este status pela saída literal do probe e seu veredito observado.
-
-## Implicação para o engine (pendente do probe)
-
-Sem resultado de `requestMediaKeySystemAccess('com.widevine.alpha')` renderizado no WebKitGTK, não há conclusão sobre a necessidade do sidecar. Se o probe observado retornar `EME_UNSUPPORTED`, a lane é sidecar Electron castlabs, com a versão de referência do CDM pinada em `4.10.3112.0` (Sidra `1.3.2` nesta máquina). O CDM existente é somente referência local e não deve ser redistribuído. Manter a postura de wrapper com CDM; não extrair chaves de conteúdo. `EME_OK` provaria apenas a negociação de acesso EME/Widevine, não reprodução licenciada ponta a ponta.
+A saída também reporta `atk`, `gio-2.0`, `glib-2.0`, `gdk-3.0`, `gdk-pixbuf-2.0`, `cairo` e `pango` ausentes. Por isso o veredito foi obtido via CI.

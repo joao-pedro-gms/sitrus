@@ -172,7 +172,7 @@ jobs:
           sha256sum "Sitrus-x86_64.AppImage" sitrus-*.rpm > SHA256SUMS
           sha256sum --check SHA256SUMS
       - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           name: Sitrus ${{ github.ref_name }}

@@ -52,17 +52,26 @@ Há dois motores de reprodução no projeto, e é importante separar o que cada 
   (`crates/sitrus-app/src/player.rs`, `ActiveBackend::Engine`). O engine é um
   sidecar Node/Electron (build castlabs `45.2.1+wvcus`) que conversa com o crate
   Rust por JSON-RPC sobre WebSocket em `127.0.0.1` (porta efêmera, token por
-  execução). O app sobe o engine no arranque (modo Electron) e a escolha do
-  backend é por faixa, com política de fallback tipada
+  execução). O engine **não sobe no arranque**: o sidecar é criado na primeira
+  faixa que exige DRM, em thread de fundo, com a interface já interativa, e a
+  escolha do backend é por faixa, com política de fallback tipada
   (`EngineError::requires_native_fallback()`, veja abaixo).
   **Exige Node no sistema** e o dist do Electron é baixado no primeiro uso
   (~274 MB; nenhum binário Electron/CDM vai no pacote). **Limites honestos desta
-  versão**: a **ponte de sessão está em correção** — os cookies e o
-  `media-user-token` da sessão do app ainda **não são repassados** ao perfil do
-  Electron, então o engine não tem sessão autorizada para licenciar DRM de
-  faixas da sua conta; o licenciamento Widevine real (VMP/UAT/produção)
-  **não foi exercitado**; e o **adapter in-page** (controle de play/pause/seek
-  na página real `music.apple.com`) **está pendente**.
+  versão**: a **ponte de sessão está implementada** — os cookies e o
+  `media-user-token` da sessão do app vão ao sidecar por stdin (nunca argv, env
+  ou log) e são injetados no perfil do Electron antes do `loadURL`, o que está
+  provado por teste com `cookies.get` e varredura de `/proc`; o que **não** está
+  provado é o efeito disso na Apple: nenhuma página real autenticada foi aberta
+  nem nenhuma faixa licenciada foi tocada nesta estação, e o licenciamento
+  Widevine real (VMP/UAT/produção) **não foi exercitado**; o **adapter in-page**
+  aciona o player web com contrato de eventos e erro tipado
+  (`page-control-unavailable`), mas foi validado contra uma fachada mock do
+  MusicKit, não contra a página real.
+
+**Como validar o áudio com a sua conta:** o roteiro passo a passo (login manual,
+qual faixa dispara o engine e o que cada sinal significa) está em
+[docs/validar-audio.md](docs/validar-audio.md).
 
 **Como o engine é escolhido** (contrato implementado em `crates/sitrus-engine`): o
 consumidor tenta subir o `SidecarEngine`, que faz spawn de `node engine/sidecar.js`

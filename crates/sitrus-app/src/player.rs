@@ -192,6 +192,7 @@ impl EngineController {
                                 let config = SidecarConfig {
                                     engine_dir,
                                     session,
+                                    show_window: engine_window_visible(),
                                     ..SidecarConfig::default()
                                 };
                                 match spawner(&config) {
@@ -791,6 +792,13 @@ fn sidecar_spawner() -> EngineSpawner {
     Arc::new(|config: &SidecarConfig| {
         SidecarEngine::spawn(config).map(|engine| Box::new(engine) as Box<dyn Engine + Send>)
     })
+}
+
+/// `SITRUS_ENGINE_WINDOW=1` mostra a janela do Electron do engine, para
+/// inspecionar a página real durante a validação. O padrão é oculta: a janela
+/// existe só para hospedar o CDM, não é interface do app.
+fn engine_window_visible() -> bool {
+    std::env::var("SITRUS_ENGINE_WINDOW").is_ok_and(|value| value == "1")
 }
 
 fn engine_directory() -> Option<PathBuf> {

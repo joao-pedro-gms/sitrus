@@ -40,6 +40,19 @@ o design em [design-system.md](design-system.md).
                     │ webview   │  wry/WebKitGTK, só para o login,
                     │ (login)   │  atrás da feature `webview`
                     └───────────┘
+
+   ┌──────────────┐   JSON-RPC 2.0 sobre WebSocket (127.0.0.1,
+   │sitrus-engine │   porta efêmera, token por execução)
+   │ (trait       │ ──────────────────────────────┐
+   │  Engine,     │                               ▼
+   │  erros       │                        ┌──────────────┐   spawn    ┌──────────────┐
+   │  tipados com │                        │ engine/      │ ─────────▶ │ Electron     │
+   │  política de │                        │ sidecar Node │            │ castlabs     │
+   │  fallback)   │                        │ (sidecar.js) │            │ 45.2.1+wvcus │
+   └──────────────┘                        └──────────────┘            │ + CDM        │
+        │  sem dependência de sitrus-app; erros com                    │ Widevine     │
+        │  `requires_native_fallback() == true` mandam o               │ 4.10.3112.0  │
+        │  consumidor cair no sitrus-player nativo                     └──────────────┘
 ```
 
 Dependências apontam sempre para baixo: `sitrus-app` amarra tudo; `sitrus-core` e
@@ -76,3 +89,8 @@ player.
   e parsing de respostas sem abrir janela.
 - A webview fica atrás de feature porque WebKitGTK é a dependência mais pesada do
   projeto: quem só desenvolve UI/lógica não precisa dela para compilar.
+- O engine DRM fica fora do processo do app (sidecar Node/Electron) porque EME não
+  existe no WebKitGTK disponível ([spike-eme.md](spike-eme.md), veredito
+  `EME_UNSUPPORTED`) e porque isso isola o CDM Widevine — baixado em runtime, nunca
+  redistribuído. Detalhes do protocolo e do que já foi provado estão em
+  [engine/README.md](../engine/README.md).

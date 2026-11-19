@@ -15,7 +15,9 @@ sitrus/
 │   ├── sitrus-core/                  # domínio: biblioteca, playlists, fila, estado do player
 │   ├── sitrus-api/                   # cliente HTTP não oficial + provedor de token/cookies
 │   ├── sitrus-player/                # backend de áudio (GStreamer ou rodio+symphonia)
+│   ├── sitrus-engine/                # engine DRM: trait Engine + cliente do sidecar (v0.2)
 │   └── sitrus-ui/                    # tokens, tema, fonte, componentes, galeria
+├── engine/                           # sidecar Node/Electron castlabs do engine DRM (v0.2)
 ├── packaging/
 │   ├── sitrus.spec                   # RPM (Fedora)
 │   ├── sitrus.desktop

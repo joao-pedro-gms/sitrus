@@ -1,10 +1,11 @@
 //! Cliente legado da API de catálogo (`api.music.apple.com`), herdado do
 //! scaffold do workspace.
 //!
-//! [`AppleMusicClient::search_tracks`] continua sendo um stub de envio: URL,
-//! query e parser estão prontos, mas a chamada HTTP (com bearer) fica para a
-//! próxima iteração. O caminho novo e autenticado do usuário está em
-//! [`crate::client`].
+//! O envio real de busca e de detalhes do catálogo vive em [`crate::catalog`]
+//! (bearer do [`crate::token::TokenProvider`]). Este módulo mantém o parser
+//! legado [`parse_search_response`] (faixas → `Track` do domínio), usado pelo
+//! fallback local de busca do aplicativo, além das constantes e do stub
+//! original do scaffold (sem envio).
 
 use std::time::Duration;
 

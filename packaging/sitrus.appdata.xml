@@ -14,7 +14,8 @@
       Sitrus é um cliente nativo (Rust + egui) para Apple Music no Linux:
       login embutido por webview usando os cookies da sessão do usuário,
       navegação pela biblioteca e playlists do usuário e player com
-      play/pause, próxima/anterior, seek e volume (fila em exibição).
+      play/pause, próxima/anterior, seek e volume (fila interativa: clique toca
+      a faixa, arraste reordena).
     </p>
     <p>
       Projeto independente e não afiliado à Apple. Interface inspirada na

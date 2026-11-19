@@ -1,0 +1,52 @@
+{
+  "data": [
+    {
+      "id": "pl-1",
+      "type": "playlists",
+      "href": "/v1/catalog/br/playlists/pl-1",
+      "attributes": {
+        "name": "Foco",
+        "curatorName": "Sitrus Editorial",
+        "description": {
+          "standard": "Seleção semanal da casa para trabalho profundo."
+        },
+        "artwork": {
+          "url": "https://is1-ssl.mzstatic.com/image/thumb/Music124/v4/citrus-focus/{w}x{h}bb.jpg",
+          "width": 2000,
+          "height": 2000
+        }
+      },
+      "relationships": {
+        "tracks": {
+          "href": "/v1/catalog/br/playlists/pl-1/tracks",
+          "next": "https://api.music.apple.com/v1/catalog/br/playlists/pl-1/tracks?offset=2&limit=2",
+          "data": [
+            {
+              "id": "song-101",
+              "type": "songs",
+              "attributes": {
+                "name": "Ponte de Sol",
+                "artistName": "Orquestra Sitrus",
+                "albumName": "Jardim Interno",
+                "durationInMillis": 231579,
+                "previewUrl": "https://audio-ssl.itunes.apple.com/preview/song-101.m4a",
+                "playCount": 1234
+              }
+            },
+            {
+              "id": "song-102",
+              "type": "songs",
+              "attributes": {
+                "name": "Cítrico",
+                "artistName": "Banda Pomelo",
+                "albumName": "Compilado Verão",
+                "durationInMillis": 198000,
+                "previewUrl": "https://audio-ssl.itunes.apple.com/preview/song-102.m4a"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

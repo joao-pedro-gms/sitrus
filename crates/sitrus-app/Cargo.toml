@@ -26,14 +26,18 @@ webview = ["dep:wry", "dep:tao"]
 sitrus-core = { workspace = true }
 sitrus-api = { workspace = true }
 sitrus-player = { workspace = true }
+sitrus-engine = { workspace = true }
 sitrus-ui = { workspace = true }
 eframe = { workspace = true }
 egui = { workspace = true }
-# Requisições diretas do app (capas de artwork e busca de catálogo enquanto o
-# envio permanece stub em sitrus-api); TLS via rustls, sem openssl.
+# Requisições diretas do app (capas de artwork, busca multi-tipo e detalhes
+# de catálogo); TLS via rustls, sem openssl.
 reqwest = { workspace = true }
 tokio = { workspace = true }
 url = { workspace = true }
+# Interpretação do envelope multi-tipo da busca (seções artists/albums/songs).
+serde = { workspace = true }
+serde_json = { workspace = true }
 # Tipo DynamicImage trafegado nos eventos de artwork (mesma versão da ui).
 image = { workspace = true }
 

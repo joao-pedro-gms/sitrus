@@ -294,3 +294,13 @@ impl TokenProvider {
         Ok(self.http.get(url).send().await?.text().await?)
     }
 }
+
+// Somente para os testes da crate: injeta um bearer no cache, para os testes
+// de envio exercitarem requisições autenticadas sem descobrir token na rede.
+#[cfg(test)]
+impl TokenProvider {
+    pub(crate) async fn seed_cache(&self, token: DeveloperToken) {
+        let mut cache = self.cache.write().await;
+        *cache = Some(token);
+    }
+}

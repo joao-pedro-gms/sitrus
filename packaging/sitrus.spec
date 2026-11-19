@@ -35,14 +35,22 @@ BuildRequires:  coreutils
 # Link-time do binário: libasound.so.2 (áudio via ALSA) e
 # libwebkit2gtk-4.1.so.0 (webview de login). O resto dos sonames é
 # coberto pelas Requires automáticas do rpmbuild.
+# Requires/recommends:
+# - alsa-lib e webkit2gtk4.1: áudio nativo e webview de login (obrigatórios).
+# - nodejs: recomendado — só o engine DRM (sidecar Electron castlabs,
+#   crates/sitrus-engine + engine/) precisa dele em runtime; sem ele, o app
+#   cai no sitrus-player nativo (ver engine/README.md). O dist do Electron
+#   NÃO é redistribuído no RPM: é baixado no bootstrap (npm ci + instalador
+#   do @castlabs/electron-releases, tag v45.2.1+wvcus, CDM Widevine 4.10.3112.0).
 Requires:       alsa-lib
 Requires:       webkit2gtk4.1
+Recommends:     nodejs
 
 %description
 Cliente nativo (Rust + egui) para Apple Music no Linux: login embutido por
 webview usando os cookies da sessão do usuário, navegação pela biblioteca e
 playlists do usuário e player com play/pause, próxima/anterior, seek e
-volume (fila em exibição).
+volume (fila interativa: clique toca a faixa, arraste reordena).
 
 Projeto independente, não afiliado à Apple. Licença MIT.
 
@@ -59,12 +67,26 @@ install -D -p -m 0755 target/release/sitrus        %{buildroot}%{_bindir}/%{name
 install -D -p -m 0644 packaging/sitrus.desktop     %{buildroot}%{_datadir}/applications/%{name}.desktop
 install -D -p -m 0644 packaging/sitrus.svg         %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 install -D -p -m 0644 packaging/sitrus.appdata.xml %{buildroot}%{_metainfodir}/%{name}.appdata.xml
+# Fontes do sidecar do engine DRM (JS): sem node_modules e sem binário
+# Electron — nada de CDM/binário redistribuído (postura de wrapper, ver
+# docs/spike-eme.md e engine/README.md). O bootstrap (npm ci + baixar o
+# Electron castlabs) ocorre em empacotamento/primeiro uso, com Node presente.
+install -d -p -m 0755 %{buildroot}%{_libexecdir}/%{name}/engine/lib \
+                      %{buildroot}%{_libexecdir}/%{name}/engine/mock \
+                      %{buildroot}%{_libexecdir}/%{name}/engine/test
+install -p -m 0644 engine/package.json engine/package-lock.json \
+                  engine/sidecar.js engine/main.js engine/preload.js \
+                  %{buildroot}%{_libexecdir}/%{name}/engine/
+install -p -m 0644 engine/lib/*.js %{buildroot}%{_libexecdir}/%{name}/engine/lib/
+install -p -m 0644 engine/mock/*   %{buildroot}%{_libexecdir}/%{name}/engine/mock/
+install -p -m 0644 engine/test/*.js %{buildroot}%{_libexecdir}/%{name}/engine/test/
 
 %files
 %{_bindir}/%{name}
 %{_datadir}/applications/%{name}.desktop
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 %{_metainfodir}/%{name}.appdata.xml
+%{_libexecdir}/%{name}/engine/
 %license LICENSE
 
 %changelog

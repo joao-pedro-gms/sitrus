@@ -1,0 +1,44 @@
+{
+  "data": [
+    {
+      "id": "art-1",
+      "type": "artists",
+      "href": "/v1/catalog/br/artists/art-1",
+      "attributes": {
+        "name": "Orquestra Sitrus"
+      },
+      "relationships": {
+        "albums": {
+          "href": "/v1/catalog/br/artists/art-1/albums",
+          "next": "https://api.music.apple.com/v1/catalog/br/artists/art-1/albums?offset=2&limit=2",
+          "data": [
+            {
+              "id": "alb-1",
+              "type": "albums",
+              "attributes": {
+                "name": "Jardim Interno",
+                "artistName": "Orquestra Sitrus",
+                "trackCount": 12,
+                "releaseDate": "2026-03-14",
+                "artwork": {
+                  "url": "https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/orchard/{w}x{h}bb.jpg",
+                  "width": 3000,
+                  "height": 3000
+                }
+              }
+            },
+            {
+              "id": "alb-2",
+              "type": "albums",
+              "attributes": {
+                "name": "Compilado Verão",
+                "artistName": "Banda Pomelo",
+                "trackCount": 8
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

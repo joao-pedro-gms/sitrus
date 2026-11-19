@@ -1,0 +1,46 @@
+{
+  "results": {
+    "songs": {
+      "href": "/v1/catalog/br/search?term=citrus&types=songs&limit=2",
+      "next": "https://api.music.apple.com/v1/catalog/br/search?term=citrus&types=songs&limit=2&offset=2",
+      "data": [
+        {
+          "id": "song-101",
+          "type": "songs",
+          "href": "/v1/catalog/br/songs/song-101",
+          "attributes": {
+            "name": "Ponte de Sol",
+            "artistName": "Orquestra Sitrus",
+            "albumName": "Jardim Interno",
+            "durationInMillis": 231579,
+            "previewUrl": "https://audio-ssl.itunes.apple.com/preview/song-101.m4a",
+            "playCount": 1234,
+            "artwork": {
+              "url": "https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/orchard/{w}x{h}bb.jpg",
+              "width": 3000,
+              "height": 3000
+            },
+            "genreNames": ["Jazz", "Instrumental"]
+          }
+        },
+        {
+          "id": "song-102",
+          "type": "songs",
+          "attributes": {
+            "name": "Cítrico",
+            "artistName": "Banda Pomelo",
+            "albumName": "Compilado Verão",
+            "durationInMillis": 198000,
+            "previewUrl": "https://audio-ssl.itunes.apple.com/preview/song-102.m4a"
+          }
+        }
+      ]
+    }
+  },
+  "meta": {
+    "results": {
+      "order": "chosen",
+      "rawOrder": ["songs"]
+    }
+  }
+}

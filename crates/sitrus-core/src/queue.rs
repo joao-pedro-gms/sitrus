@@ -77,6 +77,13 @@ impl PlaybackQueue {
         Some(())
     }
 
+    /// Seleciona uma faixa pelo índice; índices inválidos não alteram o cursor.
+    pub fn move_to(&mut self, index: usize) -> Option<&Song> {
+        let song = self.songs.get(index)?;
+        self.current_index = Some(index);
+        Some(song)
+    }
+
     /// Seleciona a primeira faixa ou avança; no fim da fila retorna `None` sem repetir.
     /// O nome segue a operação de domínio solicitada, não a semântica de `Iterator`.
     #[allow(clippy::should_implement_trait)]
@@ -106,6 +113,12 @@ impl PlaybackQueue {
         self.current_index.and_then(|index| self.songs.get(index))
     }
 
+    /// Índice selecionado, quando a fila tem faixa corrente.
+    #[must_use]
+    pub const fn current_index(&self) -> Option<usize> {
+        self.current_index
+    }
+
     /// Número de faixas na fila.
     #[must_use]
     pub fn len(&self) -> usize {
@@ -116,5 +129,45 @@ impl PlaybackQueue {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.songs.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A seleção por índice válido troca o cursor para a faixa pedida.
+    #[test]
+    fn move_to_selects_valid_index() {
+        let mut queue = test_queue();
+        assert_eq!(queue.move_to(1).map(|song| song.id.as_str()), Some("b"));
+        assert_eq!(queue.current().map(|song| song.id.as_str()), Some("b"));
+    }
+
+    /// Índices fora da fila não mudam a seleção atual.
+    #[test]
+    fn move_to_rejects_invalid_index_without_changing_cursor() {
+        let mut queue = test_queue();
+        queue.move_to(0);
+        assert!(queue.move_to(3).is_none());
+        assert_eq!(queue.current().map(|song| song.id.as_str()), Some("a"));
+    }
+
+    /// Os índices extremos selecionam a primeira e a última faixa.
+    #[test]
+    fn move_to_handles_queue_extremes() {
+        let mut queue = test_queue();
+        assert_eq!(queue.move_to(0).map(|song| song.id.as_str()), Some("a"));
+        assert_eq!(queue.move_to(2).map(|song| song.id.as_str()), Some("c"));
+    }
+
+    fn test_queue() -> PlaybackQueue {
+        use crate::model::{EntityId, Song};
+
+        let mut queue = PlaybackQueue::new();
+        for id in ["a", "b", "c"] {
+            queue.add_last(Song::new(EntityId::new(id), id, EntityId::new("album")));
+        }
+        queue
     }
 }

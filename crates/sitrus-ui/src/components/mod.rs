@@ -5,6 +5,7 @@
 
 pub mod album_card;
 pub mod button;
+pub mod detail_header;
 pub mod empty_state;
 pub mod error_banner;
 pub mod hero_header;
@@ -17,4 +18,6 @@ pub mod section_header;
 pub mod segmented_control;
 pub mod shelf_row;
 pub mod skeleton_row;
+pub mod tabs;
 pub mod toast;
+pub mod track_table;

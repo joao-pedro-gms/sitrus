@@ -1,0 +1,25 @@
+<!doctype html>
+<!-- Página apple-mock do sidecar: imita o subconjunto MusicKit do player web
+     da Apple (mock/apple-mock-page.js) para exercitar o adapter in-page
+     (lib/page-adapter.js) dentro do Electron castlabs sem sessão Apple e sem
+     rede. O ciclo comandos→adapter→MusicKit(→falso player)→eventos→bridge é
+     o mesmo contrato que a página real precisa expor. -->
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <title>Sitrus apple-mock renderer</title>
+    <style>
+      body {
+        font: 14px system-ui, sans-serif;
+        color: #eee;
+        background: #222;
+        padding: 24px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="sitrus-apple-mock-status">carregando facade MusicKit…</div>
+    <script src="../lib/mock-player.js"></script>
+    <script src="apple-mock-page.js"></script>
+  </body>
+</html>

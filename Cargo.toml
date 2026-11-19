@@ -7,7 +7,7 @@ members = ["crates/*", "spike/eme-probe"]
 
 # Metadados herdados por todos os membros via `*.workspace = true`.
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.99"
 license = "MIT"
@@ -50,10 +50,16 @@ tracing = "0.1.44"
 directories = "6.0.0"
 image = "0.25.10"
 
+# Engine DRM: sidecar castlabs Electron com JSON-RPC sobre WebSocket em 127.0.0.1.
+# WS local (ws://) não precisa de TLS: features enxutas, sem rustls/native-tls.
+tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect", "handshake"] }
+futures-util = { version = "0.3.31", default-features = false, features = ["sink", "std"] }
+
 # Crates internos do workspace (referenciados pelos membros com `workspace = true`).
 sitrus-core = { path = "crates/sitrus-core" }
 sitrus-api = { path = "crates/sitrus-api" }
 sitrus-player = { path = "crates/sitrus-player" }
+sitrus-engine = { path = "crates/sitrus-engine" }
 sitrus-ui = { path = "crates/sitrus-ui" }
 
 # Perfil de release pensado para AppImage/RPM: LTO integral e binário enxuto.

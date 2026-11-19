@@ -22,6 +22,8 @@ pub struct SongRow {
     pub artwork_url: Option<String>,
     /// URL de reprodução quando a origem a fornece (prévia do catálogo).
     pub preview_url: Option<url::Url>,
+    /// Contagem de reproduções da biblioteca quando a API a fornece.
+    pub play_count: Option<u64>,
     /// Faixa de domínio correspondente, pronta para a fila de reprodução.
     pub song: sitrus_core::model::Song,
 }
@@ -37,6 +39,45 @@ pub struct PlaylistRow {
     pub track_count: Option<u64>,
     /// URL de capa (com `{w}`/`{h}`), quando disponível.
     pub artwork_url: Option<String>,
+}
+
+/// Álbum de catálogo exibível: resultado da aba Álbuns da busca e cartão da
+/// página de artista. O subtítulo do cartão é composto na renderização
+/// (`prefer_artist()` decide entre artista e ano).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlbumRow {
+    /// Identificador do álbum (catálogo).
+    pub id: String,
+    /// Título.
+    pub title: String,
+    /// Artista principal.
+    pub artist: String,
+    /// Ano de lançamento extraído de `releaseDate` (4 dígitos), quando há.
+    pub year: Option<String>,
+    /// URL de capa (com `{w}`/`{h}`), quando disponível.
+    pub artwork_url: Option<String>,
+}
+
+impl AlbumRow {
+    /// Subtítulo de exibição: artista quando `prefer_artist`, senão o ano
+    /// (páginas de artista mostram o lançamento; busca mostra o artista).
+    #[must_use]
+    pub fn display_subtitle(&self, prefer_artist: bool) -> String {
+        if prefer_artist {
+            self.artist.clone()
+        } else {
+            self.year.clone().unwrap_or_else(|| self.artist.clone())
+        }
+    }
+}
+
+/// Resultado de artista da aba Artistas da busca (nome navegável).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SearchArtistRow {
+    /// Identificador do artista (catálogo).
+    pub id: String,
+    /// Nome de exibição.
+    pub name: String,
 }
 
 /// Estado de carregamento de uma seção de dados remotos.

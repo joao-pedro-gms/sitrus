@@ -1,0 +1,59 @@
+{
+  "data": [
+    {
+      "id": "alb-1",
+      "type": "albums",
+      "href": "/v1/catalog/br/albums/alb-1",
+      "attributes": {
+        "name": "Jardim Interno",
+        "artistName": "Orquestra Sitrus",
+        "trackCount": 12,
+        "releaseDate": "2026-03-14",
+        "artwork": {
+          "url": "https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/orchard/{w}x{h}bb.jpg",
+          "width": 3000,
+          "height": 3000
+        },
+        "genreNames": ["Jazz", "Instrumental"],
+        "isCompilation": false,
+        "copyright": "© Orquestra Sitrus"
+      },
+      "relationships": {
+        "tracks": {
+          "href": "/v1/catalog/br/albums/alb-1/tracks",
+          "next": "https://api.music.apple.com/v1/catalog/br/albums/alb-1/tracks?offset=2&limit=2",
+          "data": [
+            {
+              "id": "song-101",
+              "type": "songs",
+              "attributes": {
+                "name": "Ponte de Sol",
+                "artistName": "Orquestra Sitrus",
+                "albumName": "Jardim Interno",
+                "durationInMillis": 231579,
+                "previewUrl": "https://audio-ssl.itunes.apple.com/preview/song-101.m4a",
+                "playCount": 1234,
+                "artwork": {
+                  "url": "https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/orchard/{w}x{h}bb.jpg",
+                  "width": 3000,
+                  "height": 3000
+                }
+              }
+            },
+            {
+              "id": "song-103",
+              "type": "songs",
+              "attributes": {
+                "name": "Orvalho",
+                "artistName": "Orquestra Sitrus",
+                "albumName": "Jardim Interno",
+                "durationInMillis": 143000,
+                "previewUrl": "https://audio-ssl.itunes.apple.com/preview/song-103.m4a"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

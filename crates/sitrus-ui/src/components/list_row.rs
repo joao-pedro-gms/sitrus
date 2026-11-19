@@ -54,11 +54,53 @@ pub fn list_row(
     enabled: bool,
     selected: bool,
 ) -> Response {
+    list_row_impl(
+        ui,
+        theme,
+        id,
+        row,
+        enabled,
+        selected,
+        (Sense::CLICK.union(Sense::FOCUSABLE), true),
+    )
+}
+
+/// Variante de linha com drag para reordenar; não cria uma área de hover
+/// independente que roubaria o gesto da linha.
+pub fn draggable_list_row(
+    ui: &mut Ui,
+    theme: &Theme,
+    id: Id,
+    row: ListRow<'_>,
+    enabled: bool,
+    selected: bool,
+) -> Response {
+    list_row_impl(
+        ui,
+        theme,
+        id,
+        row,
+        enabled,
+        selected,
+        (
+            Sense::CLICK.union(Sense::DRAG).union(Sense::FOCUSABLE),
+            false,
+        ),
+    )
+}
+
+fn list_row_impl(
+    ui: &mut Ui,
+    theme: &Theme,
+    id: Id,
+    row: ListRow<'_>,
+    enabled: bool,
+    selected: bool,
+    behavior: (Sense, bool),
+) -> Response {
+    let (sense, action_interaction) = behavior;
     let height = tokens::sizes::LIST_ROW;
-    let (_, response) = ui.allocate_exact_size(
-        Vec2::new(ui.available_width(), height),
-        Sense::CLICK.union(Sense::FOCUSABLE),
-    );
+    let (_, response) = ui.allocate_exact_size(Vec2::new(ui.available_width(), height), sense);
     let state = button::derive_state(
         enabled,
         selected,
@@ -187,11 +229,16 @@ pub fn list_row(
         button::draw_focus_ring(ui, theme, response.rect, tokens::radius::SM);
     }
 
-    // Ação clicável de hover (área do ícone direito).
-    let action_id = id.with((row.title, "hover_action"));
-    let action_rect =
-        egui::Rect::from_center_size(action_center, Vec2::splat(tokens::sizes::MIN_CLICK_TARGET));
-    ui.interact(action_rect, action_id, Sense::CLICK)
+    if action_interaction {
+        let action_id = id.with((row.title, "hover_action"));
+        let action_rect = egui::Rect::from_center_size(
+            action_center,
+            Vec2::splat(tokens::sizes::MIN_CLICK_TARGET),
+        );
+        ui.interact(action_rect, action_id, Sense::CLICK)
+    } else {
+        response
+    }
 }
 
 /// Alias semântico para linha de faixa (mesma apresentação, hover com Play).

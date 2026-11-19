@@ -116,6 +116,19 @@ impl LibraryClient {
         self
     }
 
+    /// Base alternativa para os testes de envio (servidor de loopback).
+    /// Recria o cliente HTTP sem proxies de ambiente, para que os testes não
+    /// dependam de variáveis `*_PROXY` do host.
+    #[cfg(test)]
+    pub(crate) fn with_base(mut self, base: Url) -> ApiResult<Self> {
+        self.base = base;
+        self.http = reqwest::Client::builder()
+            .user_agent(concat!("sitrus/", env!("CARGO_PKG_VERSION")))
+            .no_proxy()
+            .build()?;
+        Ok(self)
+    }
+
     /// Sessão em uso, somente leitura (media-user-token, cookies, storefront).
     #[must_use]
     pub fn session(&self) -> &Session {
@@ -145,6 +158,23 @@ impl LibraryClient {
         limit: u32,
     ) -> ApiResult<Page<LibraryPlaylist>> {
         self.library_page("playlists", offset, limit).await
+    }
+
+    /// Faixas de uma playlist da biblioteca do usuário, em
+    /// `/v1/me/library/playlists/{id}/tracks`, com `offset`/`limit`.
+    ///
+    /// # Erros
+    /// [`ApiError::Parse`] quando o `id` é vazio ou contém `/`; demais erros
+    /// herdados do [`Self::library_page`].
+    pub async fn library_playlist_tracks(
+        &self,
+        id: &str,
+        offset: u32,
+        limit: u32,
+    ) -> ApiResult<Page<LibrarySong>> {
+        validate_id(id, "da playlist")?;
+        let resource = format!("playlists/{id}/tracks");
+        self.library_page(&resource, offset, limit).await
     }
 
     /// Segue o cursor `next` devolvido por uma página anterior, para paginação
@@ -245,6 +275,21 @@ impl LibraryClient {
     }
 }
 
+/// Recusa identificadores vazios ou com `/`: eles são interpolados em
+/// caminhos de endpoint (`playlists/{id}/tracks`) e não podem alterar a
+/// estrutura do caminho.
+///
+/// # Erros
+/// [`ApiError::Parse`] quando o id é vazio ou contém `/`.
+pub(crate) fn validate_id(id: &str, what: &str) -> ApiResult<()> {
+    if id.is_empty() || id.contains('/') {
+        return Err(ApiError::Parse(format!(
+            "id {what} vazio ou com separador inválido: {id:?}"
+        )));
+    }
+    Ok(())
+}
+
 /// Monta a URL absoluta de `/v1/me/library/{resource}` com `offset` e `limit`.
 ///
 /// # Erros
@@ -304,7 +349,7 @@ where
 
 /// Inteiro de segundos do header `Retry-After` (formato de datas HTTP não é
 /// tratado: devolve `None` e o backoff próprio entra em ação).
-fn parse_retry_after(value: &str) -> Option<Duration> {
+pub(crate) fn parse_retry_after(value: &str) -> Option<Duration> {
     let seconds: u64 = value.trim().parse().ok()?;
     Some(Duration::from_secs(seconds))
 }
@@ -336,5 +381,106 @@ where
             "resposta retriável; nova tentativa após backoff"
         );
         tokio::time::sleep(delay).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{MockServer, seeded_provider};
+
+    /// Lê um fixture de `tests/fixtures/`.
+    fn fixture(name: &str) -> String {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures")
+            .join(name);
+        std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("fixture {name} não pôde ser lido: {e}"))
+    }
+
+    /// Faixas de uma playlist da biblioteca: GET em
+    /// `/v1/me/library/playlists/{id}/tracks` com bearer, media-user-token,
+    /// `offset`/`limit`, e parsing do fixture real de biblioteca — tudo em
+    /// loopback, sem rede externa.
+    #[tokio::test(flavor = "current_thread")]
+    async fn library_playlist_tracks_hits_playlist_tracks_resource() {
+        let server = MockServer::start(vec![(200, fixture("library_songs.json"))]);
+        let session = Session::from_pasted_cookies("Media-User-Token=mtok-teste; geo=BR");
+        let client = LibraryClient::new(seeded_provider("test-bearer-lib").await, session)
+            .expect("cliente de biblioteca")
+            .with_base(server.base.clone())
+            .expect("base de loopback aplicada");
+
+        let page = client
+            .library_playlist_tracks("p1", 0, 2)
+            .await
+            .expect("faixas da playlist");
+
+        let request = server.request(0);
+        assert!(
+            request
+                .target
+                .starts_with("/v1/me/library/playlists/p1/tracks?"),
+            "destino inesperado: {}",
+            request.target
+        );
+        assert!(request.target.contains("offset=0&limit=2"));
+        assert_eq!(
+            request.header("authorization"),
+            Some("Bearer test-bearer-lib")
+        );
+        assert_eq!(request.header("media-user-token"), Some("mtok-teste"));
+        assert_eq!(page.data[0].id, "lSong-001");
+        assert_eq!(
+            page.next.as_deref(),
+            Some("https://amp-api.music.apple.com/v1/me/library/songs?offset=2&limit=2")
+        );
+    }
+
+    /// Sem media-user-token, a chamada falha como `Unauthorized` antes de
+    /// qualquer requisição (o counter do mock pode confirmar).
+    #[tokio::test(flavor = "current_thread")]
+    async fn library_playlist_tracks_requires_media_user_token() {
+        let server = MockServer::start(vec![]);
+        let client =
+            LibraryClient::new(seeded_provider("test-bearer-lib").await, Session::default())
+                .expect("cliente de biblioteca")
+                .with_base(server.base.clone())
+                .expect("base de loopback aplicada");
+
+        let error = client
+            .library_playlist_tracks("p1", 0, 2)
+            .await
+            .expect_err("sem media-user-token deve falhar");
+
+        assert!(
+            matches!(error, ApiError::Unauthorized(_)),
+            "erro: {error:?}"
+        );
+        assert_eq!(server.request_count(), 0, "nenhuma requisição esperada");
+    }
+
+    /// Id vazio ou com `/` é recusado como `Parse` antes de qualquer
+    /// requisição.
+    #[tokio::test(flavor = "current_thread")]
+    async fn library_playlist_tracks_rejects_invalid_ids() {
+        let server = MockServer::start(vec![]);
+        let session = Session::from_pasted_cookies("Media-User-Token=mtok-teste");
+        let client = LibraryClient::new(seeded_provider("test-bearer-lib").await, session)
+            .expect("cliente de biblioteca")
+            .with_base(server.base.clone())
+            .expect("base de loopback aplicada");
+
+        for invalid in ["", "sobendo/aqui", "p/1"] {
+            let error = client
+                .library_playlist_tracks(invalid, 0, 2)
+                .await
+                .expect_err("id inválido deve ser recusado");
+            assert!(
+                matches!(error, ApiError::Parse(_)),
+                "id {invalid:?} virou {error:?}"
+            );
+        }
+        assert_eq!(server.request_count(), 0, "nenhuma requisição esperada");
     }
 }

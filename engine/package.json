@@ -1,0 +1,21 @@
+{
+  "name": "sitrus-engine-sidecar",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Sidecar Electron castlabs do Sitrus: JSON-RPC sobre WebSocket em 127.0.0.1 (porta efêmera + token por execução) para reprodução DRM com Widevine CDM 4.10.3112.0.",
+  "main": "main.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node sidecar.js",
+    "start:mock": "SITRUS_SIDECAR_MODE=mock node sidecar.js",
+    "roundtrip": "node test/roundtrip.js"
+  },
+  "dependencies": {
+    "ws": "8.23.0"
+  },
+  "devDependencies": {
+    "@castlabs/electron-releases": "git+https://github.com/castlabs/electron-releases.git#v45.2.1+wvcus"
+  }
+}

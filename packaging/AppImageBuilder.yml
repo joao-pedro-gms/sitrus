@@ -13,11 +13,17 @@ version: 1
 
 script:
   - rm -rf AppDir || true
-  - mkdir -p AppDir/usr/bin AppDir/usr/share/applications AppDir/usr/share/metainfo AppDir/usr/share/icons/hicolor/scalable/apps
+  - mkdir -p AppDir/usr/bin AppDir/usr/share/applications AppDir/usr/share/metainfo AppDir/usr/share/icons/hicolor/scalable/apps AppDir/usr/lib/sitrus/engine
   - cp target/release/sitrus AppDir/usr/bin/sitrus
   - cp packaging/sitrus.desktop AppDir/usr/share/applications/sitrus.desktop
   - cp packaging/sitrus.appdata.xml AppDir/usr/share/metainfo/sitrus.appdata.xml
   - cp packaging/sitrus.svg AppDir/usr/share/icons/hicolor/scalable/apps/sitrus.svg
+  # Fontes do sidecar do engine (JS puro): package.json/lock + scripts, SEM
+  # node_modules e SEM binário Electron/CDM (postura de wrapper; o dist do
+  # Electron castlabs é baixado em bootstrap com Node presente — ver
+  # engine/README.md).
+  - cp engine/package.json engine/package-lock.json engine/sidecar.js engine/main.js engine/preload.js AppDir/usr/lib/sitrus/engine/
+  - cp -r engine/lib engine/mock engine/test AppDir/usr/lib/sitrus/engine/
 
 AppDir:
   path: ./AppDir

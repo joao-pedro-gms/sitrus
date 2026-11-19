@@ -448,8 +448,22 @@ pub struct QueueItem<'a> {
     pub active: bool,
 }
 
+/// Ações da fila emitidas no frame.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct QueuePanelResponse {
+    /// Índice clicado para pular à faixa.
+    pub clicked: Option<usize>,
+    /// Par (origem, destino) de uma faixa arrastada.
+    pub reordered: Option<(usize, usize)>,
+}
+
 /// Painel de fila (usado dentro de um `Ui` posicionado pelo chamador).
-pub fn queue_panel(ui: &mut Ui, theme: &Theme, id: Id, items: &[QueueItem<'_>]) -> Response {
+pub fn queue_panel(
+    ui: &mut Ui,
+    theme: &Theme,
+    id: Id,
+    items: &[QueueItem<'_>],
+) -> QueuePanelResponse {
     let panel_rect = ui.available_rect_before_wrap();
     ui.painter().rect_filled(
         panel_rect,
@@ -477,7 +491,8 @@ pub fn queue_panel(ui: &mut Ui, theme: &Theme, id: Id, items: &[QueueItem<'_>]) 
     );
     panel.add_space(spacing::X8);
 
-    let mut last_response = None;
+    let mut output = QueuePanelResponse::default();
+    let drag_source_id = id.with("queue_drag_source");
     for (i, item) in items.iter().enumerate() {
         let row = list_row::ListRow {
             index: Some(i),
@@ -488,23 +503,43 @@ pub fn queue_panel(ui: &mut Ui, theme: &Theme, id: Id, items: &[QueueItem<'_>]) 
             hover_icon: Some(if item.active { Icon::Pause } else { Icon::Play }),
             hover_tooltip: None,
         };
-        last_response = Some(list_row::list_row(
+        let response = list_row::draggable_list_row(
             &mut panel,
             theme,
             id.with(("queue_row", i)),
             row,
             true,
             item.active,
-        ));
+        );
+        if response.clicked() {
+            output.clicked = Some(i);
+        }
+        if response.drag_started() {
+            panel
+                .ctx()
+                .data_mut(|data| data.insert_temp(drag_source_id, i));
+        }
+        if response.hovered() && panel.input(|input| input.pointer.any_released()) {
+            let from = panel
+                .ctx()
+                .data_mut(|data| data.get_temp::<usize>(drag_source_id));
+            if let Some(from) = from.filter(|from| *from != i) {
+                output.reordered = Some((from, i));
+            }
+            panel
+                .ctx()
+                .data_mut(|data| data.remove_temp::<usize>(drag_source_id));
+        }
         panel.add_space(spacing::X4);
     }
-    last_response.unwrap_or_else(|| {
+    if items.is_empty() {
         panel.label(
             egui::RichText::new("A fila está vazia")
                 .font(typography::font_id(type_scale::TypeToken::Subheadline))
                 .color(theme.label_secondary),
-        )
-    })
+        );
+    }
+    output
 }
 
 #[cfg(test)]

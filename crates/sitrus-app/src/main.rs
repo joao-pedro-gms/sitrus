@@ -12,8 +12,10 @@ use std::process::ExitCode;
 use eframe::egui;
 
 mod app;
+mod detail;
 mod login;
 mod model;
+mod navigation;
 mod net;
 mod player;
 #[cfg(feature = "webview")]

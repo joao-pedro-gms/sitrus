@@ -21,15 +21,18 @@ use egui::{Color32, Context, Id, ScrollArea, TextureHandle, Vec2, ViewportComman
 use sitrus_api::Session;
 use sitrus_core::Settings;
 use sitrus_core::config::Theme as CoreTheme;
+use sitrus_engine::{SidecarCookie, SidecarSession};
 use sitrus_ui::components::error_banner::BannerKind;
 use sitrus_ui::icons::Icon;
 use sitrus_ui::tokens::{spacing, type_scale};
 use sitrus_ui::typography;
 use sitrus_ui::{components as comps, theme::Theme};
 
+use crate::detail::{DetailKind, DetailPhase, DetailStore};
 use crate::login::{self, LoginAction, LoginUi};
-use crate::model::{ListMode, PlaylistRow, SectionState, SongRow};
-use crate::net::{NetCommand, NetEvent, spawn as spawn_net};
+use crate::model::{AlbumRow, ListMode, PlaylistRow, SearchArtistRow, SectionState, SongRow};
+use crate::navigation::{can_pop, is_detail, nav_pop, nav_push, nav_reset};
+use crate::net::{NetCommand, NetEvent, PlaylistSource, spawn as spawn_net};
 use crate::player::PlayerController;
 
 /// Tamanho inicial da janela (design).
@@ -61,6 +64,26 @@ fn toast_id() -> Id {
     Id::unique("sitrus_toast")
 }
 
+/// Mapeia a sessão do app (`sitrus-api::Session`) ao envelope do engine:
+/// cookies por ordem de nome (`BTreeMap`) viram [`SidecarCookie`] com
+/// `domain: None` e `media_user_token` é repassado. `None` quando a sessão
+/// não tem cookie algum nem token (nada a transportar ao sidecar).
+fn engine_session(session: &Session) -> Option<SidecarSession> {
+    let mapped = SidecarSession {
+        media_user_token: session.media_user_token.clone(),
+        cookies: session
+            .cookies
+            .iter()
+            .map(|(name, value)| SidecarCookie {
+                name: name.clone(),
+                value: value.clone(),
+                domain: None,
+            })
+            .collect(),
+    };
+    (mapped.media_user_token.is_some() || !mapped.cookies.is_empty()).then_some(mapped)
+}
+
 /// Corpo com margem lateral de 24 px (retângulo exato, cursor avançado).
 fn padded(ui: &mut egui::Ui, body: impl FnOnce(&mut egui::Ui)) {
     let inner = ui
@@ -75,7 +98,11 @@ fn padded(ui: &mut egui::Ui, body: impl FnOnce(&mut egui::Ui)) {
 }
 
 /// Tela ativa no rail.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// As telas de detalhe carregam o id do recurso do catálogo (`Artist`/`Album`)
+/// ou o id da playlist (catálogo ou biblioteca, resolvido pela entrada na
+/// loja de detalhes). São derivadas de `Clone`/`PartialEq` — sem `Copy`.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Screen {
     /// Início (hero + prateleiras).
     Home,
@@ -87,21 +114,52 @@ pub enum Screen {
     Search,
     /// Entrar (login manual/webview).
     Login,
+    /// Página de artista do catálogo (id da Apple).
+    Artist(String),
+    /// Página de álbum do catálogo (id da Apple).
+    Album(String),
+    /// Página de playlist (id da Apple; a origem catálogo/biblioteca vive na
+    /// entrada da loja de detalhes).
+    Playlist(String),
 }
 
 impl Screen {
-    /// Índice no rail; Login não aparece no rail.
+    /// Índice no rail; Login e detalhes não aparecem no rail.
     #[must_use]
-    pub const fn rail_index(self) -> Option<usize> {
+    pub fn rail_index(&self) -> Option<usize> {
         match self {
             Self::Home => Some(0),
             Self::Library => Some(1),
             Self::Playlists => Some(2),
             Self::Search => Some(3),
-            Self::Login => None,
+            Self::Login | Self::Artist(_) | Self::Album(_) | Self::Playlist(_) => None,
         }
     }
 }
+
+/// (Prefixo da loja de detalhes, id) da página corrente, quando detalhe.
+#[must_use]
+fn detail_parts(screen: &Screen) -> Option<(&'static str, String)> {
+    match screen {
+        Screen::Artist(id) => Some(("artist", id.clone())),
+        Screen::Album(id) => Some(("album", id.clone())),
+        Screen::Playlist(id) => Some(("playlist", id.clone())),
+        _ => None,
+    }
+}
+
+/// Kind padrão para o prefixo da loja (usado quando a entrada não existe).
+#[must_use]
+fn kind_for_prefix(prefix: &str) -> DetailKind {
+    match prefix {
+        "artist" => DetailKind::Artist,
+        "album" => DetailKind::Album,
+        _ => DetailKind::PlaylistCatalog,
+    }
+}
+
+/// Abas da busca multi-tipo, na ordem.
+const SEARCH_TABS: [&str; 3] = ["Artistas", "Álbuns", "Faixas"];
 
 /// Tela de busca (termo corrente, enviado e resultados).
 #[derive(Debug, Default)]
@@ -110,14 +168,20 @@ struct SearchState {
     input: String,
     /// Último termo enviado (dedupe de Enter repetido).
     submitted: String,
-    /// Resultados correntes.
+    /// Resultados de faixas (catálogo com prévia ou filtro local).
     results: Vec<SongRow>,
+    /// Artistas do catálogo (aba navegável).
+    artists: Vec<SearchArtistRow>,
+    /// Álbuns do catálogo (aba navegável).
+    albums: Vec<AlbumRow>,
     /// Estado da busca.
     state: SectionState,
     /// Origem dos resultados ("Catálogo…" / "Sua biblioteca").
     source: &'static str,
     /// Nota de fallback, quando a busca caiu na biblioteca local.
     note: Option<String>,
+    /// Aba corrente dos resultados (0/1/2 conforme [`SEARCH_TABS`]).
+    tab: usize,
 }
 
 /// Aplicativo principal; implementa `eframe::App`.
@@ -126,6 +190,8 @@ pub struct App {
     settings: Settings,
     /// Tela ativa.
     screen: Screen,
+    /// Histórico de telas para voltar (detalhes empilham a origem).
+    nav_stack: Vec<Screen>,
     /// Estado local da tela de login.
     login: LoginUi,
     /// Sessão ativa (presença; valores nunca são exibidos ou logados).
@@ -156,6 +222,8 @@ pub struct App {
     playlists_mode: ListMode,
     /// Estado da busca.
     search: SearchState,
+    /// Páginas de detalhe (artista/álbum/playlist) por chave `prefixo:id`.
+    details: DetailStore,
     /// Texturas de artwork por chave (id do item).
     artworks: HashMap<String, TextureHandle>,
     /// Gradientes derivados por chave (hero).
@@ -185,6 +253,7 @@ impl App {
         let mut app = Self {
             settings,
             screen: Screen::Home,
+            nav_stack: Vec::new(),
             login: LoginUi::default(),
             session: None,
             net_tx,
@@ -200,6 +269,7 @@ impl App {
             library_mode: ListMode::Shelves,
             playlists_mode: ListMode::Shelves,
             search: SearchState::default(),
+            details: DetailStore::default(),
             artworks: HashMap::new(),
             gradients: HashMap::new(),
             pending_artwork: HashSet::new(),
@@ -210,10 +280,13 @@ impl App {
         };
         app.player.set_volume(app.settings.volume.clamp(0.0, 1.0));
 
-        // Sessão restaurada do disco: abre com as telas carregando.
+        // Sessão restaurada do disco: abre com as telas carregando. O
+        // sidecar (spawn preguiçoso) nasce com esta sessão quando a primeira
+        // faixa DRM pedir.
         match Session::load() {
             Ok(Some(session)) if session.media_user_token.is_some() => {
                 app.session = Some(session.clone());
+                app.player.set_user_session(engine_session(&session));
                 app.set_library_loading();
                 let _ = app.net_tx.send(NetCommand::SetSession(session));
             }
@@ -274,10 +347,13 @@ impl App {
     /// disco antes de o worker publicar `SessionReady`.
     fn adopt_session(&mut self, session: &Session) {
         self.session = Some(session.clone());
+        // A sessão chega ao sidecar no próximo spawn de faixa DRM
+        // (envelope stdin; nada de cookie/token em log).
+        self.player.set_user_session(engine_session(session));
         self.songs.clear();
         self.playlists.clear();
         self.set_library_loading();
-        self.screen = Screen::Home;
+        nav_reset(&mut self.screen, &mut self.nav_stack, Screen::Home);
         self.login.reset();
         self.set_toast(
             BannerKind::Info,
@@ -298,7 +374,7 @@ impl App {
     /// Logout: descarta sessão do app e do disco.
     fn logout(&mut self) {
         self.session = None;
-        self.screen = Screen::Login;
+        nav_reset(&mut self.screen, &mut self.nav_stack, Screen::Login);
         let _ = self.net_tx.send(NetCommand::ClearSession);
         if let Ok(path) = Session::session_path() {
             let _ = std::fs::remove_file(path);
@@ -350,10 +426,83 @@ impl App {
         }
         self.search.submitted = term.clone();
         self.search.results.clear();
+        self.search.artists.clear();
+        self.search.albums.clear();
+        self.search.tab = 0;
         self.search.state = SectionState::Loading;
         self.search.source = "";
         self.search.note = None;
         let _ = self.net_tx.send(NetCommand::Search(term));
+    }
+
+    // ------------------------------------------------------------------
+    // Navegação (pilha de telas)
+    // ------------------------------------------------------------------
+
+    /// Abre uma tela qualquer empilhando a corrente e pedindo carga de
+    /// detalhe, quando a tela for uma página (artista/álbum/playlist).
+    fn open_screen(&mut self, next: Screen) {
+        if next == self.screen {
+            return;
+        }
+        nav_push(&mut self.screen, &mut self.nav_stack, next.clone());
+        match next {
+            Screen::Artist(id) => self.send_detail(DetailKind::Artist, &id),
+            Screen::Album(id) => self.send_detail(DetailKind::Album, &id),
+            // A origem (catálogo/biblioteca) vem da entrada já gravada — em
+            // primeira abertura pela chamada `open_playlist` que a conhece.
+            Screen::Playlist(id) => {
+                let kind = self
+                    .details
+                    .kind_at(&DetailKind::PlaylistCatalog.key(&id))
+                    .unwrap_or(DetailKind::PlaylistCatalog);
+                self.send_detail(kind, &id);
+            }
+            _ => {}
+        }
+    }
+
+    /// Abre a página de uma playlist com a origem conhecida pelo chamador
+    /// (card da biblioteca → `Library`; resultado de busca → `Catalog`).
+    fn open_playlist(&mut self, id: &str, source: PlaylistSource) {
+        if self.screen == Screen::Playlist(id.to_owned()) {
+            return;
+        }
+        nav_push(
+            &mut self.screen,
+            &mut self.nav_stack,
+            Screen::Playlist(id.to_owned()),
+        );
+        self.send_detail(DetailKind::from_playlist_source(source), id);
+    }
+
+    /// Rail/atalhos: volta à seção raiz e descarta o histórico de detalhes.
+    fn go_root(&mut self, root: Screen) {
+        nav_reset(&mut self.screen, &mut self.nav_stack, root);
+    }
+
+    /// Volta uma tela do histórico (Escape/seta esquerda/botão Voltar).
+    /// Retorna `true` quando houve retorno.
+    fn nav_back(&mut self) -> bool {
+        nav_pop(&mut self.screen, &mut self.nav_stack)
+    }
+
+    /// Pede carga da página de detalhe (o `DetailStore` decide se repete).
+    fn send_detail(&mut self, kind: DetailKind, id: &str) {
+        if let Some(command) = self.details.request(kind, id) {
+            let _ = self.net_tx.send(command);
+        }
+    }
+
+    /// Re-tenta a página de detalhe corrente com o kind gravado na entrada
+    /// (mantém a origem catálogo/biblioteca das playlists).
+    fn retry_current_detail(&mut self, prefix: &str, id: &str) {
+        let key = format!("{prefix}:{id}");
+        let kind = self
+            .details
+            .kind_at(&key)
+            .unwrap_or(kind_for_prefix(prefix));
+        self.send_detail(kind, id);
     }
 
     /// Processa um evento do worker.
@@ -401,11 +550,15 @@ impl App {
             NetEvent::SearchDone {
                 term,
                 rows,
+                artists,
+                albums,
                 source,
                 note,
             } => {
                 if term == self.search.submitted {
                     self.search.results = rows;
+                    self.search.artists = artists;
+                    self.search.albums = albums;
                     self.search.state = SectionState::Loaded;
                     self.search.source = source;
                     self.search.note = note;
@@ -415,6 +568,84 @@ impl App {
                 if term == self.search.submitted {
                     self.search.state = SectionState::Failed(message);
                 }
+            }
+            NetEvent::ArtistDetailDone {
+                id,
+                name,
+                albums,
+                songs,
+            } => {
+                self.details.apply_loaded(
+                    DetailKind::Artist,
+                    &id,
+                    crate::detail::DetailData::Artist {
+                        name,
+                        albums,
+                        songs,
+                        tab: 0,
+                    },
+                );
+            }
+            NetEvent::ArtistDetailFailed { id, message } => {
+                self.details.apply_failed(DetailKind::Artist, &id, message);
+            }
+            NetEvent::AlbumDetailDone {
+                id,
+                title,
+                subtitle,
+                artwork_url,
+                songs,
+            } => {
+                self.details.apply_loaded(
+                    DetailKind::Album,
+                    &id,
+                    crate::detail::DetailData::Album {
+                        title,
+                        subtitle,
+                        artwork_url,
+                        songs,
+                    },
+                );
+            }
+            NetEvent::AlbumDetailFailed { id, message } => {
+                self.details.apply_failed(DetailKind::Album, &id, message);
+            }
+            NetEvent::PlaylistDetailDone {
+                id,
+                source,
+                title,
+                subtitle,
+                artwork_url,
+                songs,
+            } => {
+                // A rota da biblioteca não devolve o nome da playlist: completa
+                // com o nome do card clicado, quando ele está na lista.
+                let title = if title.is_empty() {
+                    self.playlists
+                        .iter()
+                        .find(|playlist| playlist.id == id)
+                        .map_or_else(|| "Playlist".to_owned(), |playlist| playlist.name.clone())
+                } else {
+                    title
+                };
+                self.details.apply_loaded(
+                    DetailKind::from_playlist_source(source),
+                    &id,
+                    crate::detail::DetailData::Playlist {
+                        title,
+                        subtitle,
+                        artwork_url,
+                        songs,
+                    },
+                );
+            }
+            NetEvent::PlaylistDetailFailed {
+                id,
+                source,
+                message,
+            } => {
+                self.details
+                    .apply_failed(DetailKind::from_playlist_source(source), &id, message);
             }
             NetEvent::ArtworkDone {
                 key,
@@ -488,6 +719,33 @@ impl App {
         for playlist in self.playlists.iter().take(16) {
             pending.push((playlist.id.clone(), playlist.artwork_url.clone()));
         }
+        // Busca: capas dos álbuns e das faixas do catálogo correntes.
+        if self.screen == Screen::Search {
+            for album in self.search.albums.iter().take(12) {
+                pending.push((album.id.clone(), album.artwork_url.clone()));
+            }
+            for row in self.search.results.iter().take(12) {
+                pending.push((row.id.clone(), row.artwork_url.clone()));
+            }
+        }
+        // Página de detalhe corrente: capa do hero (coleção) e capas dos
+        // álbuns do artista.
+        if let Some((prefix, id)) = detail_parts(&self.screen) {
+            let key = format!("{prefix}:{id}");
+            if let Some(DetailPhase::Loaded(data)) = self.details.phase(&key) {
+                match data {
+                    crate::detail::DetailData::Artist { albums, .. } => {
+                        for album in albums.iter().take(9) {
+                            pending.push((album.id.clone(), album.artwork_url.clone()));
+                        }
+                    }
+                    crate::detail::DetailData::Album { artwork_url, .. }
+                    | crate::detail::DetailData::Playlist { artwork_url, .. } => {
+                        pending.push((id.clone(), artwork_url.clone()));
+                    }
+                }
+            }
+        }
         let mut quota = 4_u8;
         for (key, url) in pending {
             if quota == 0 {
@@ -517,22 +775,26 @@ impl App {
         }
     }
 
-    /// Toca uma linha de faixa; avisa quando a biblioteca não expõe URL.
     fn play_rows(&mut self, rows: &[SongRow], index: usize) {
-        if rows.get(index).is_some_and(|row| row.preview_url.is_none()) {
+        let needs_engine = rows.get(index).is_some_and(|row| row.preview_url.is_none());
+        // Spawn preguiçoso: faixa sem prévia é para o engine DRM — o aviso de
+        // indisponibilidade só faz sentido quando o spawn JÁ falhou.
+        if needs_engine
+            && !self.player.engine_available()
+            && let Some(failure) = self.player.engine_spawn_message()
+        {
             self.set_toast(
-                BannerKind::Info,
-                "Faixas da biblioteca não expõem URL de reprodução; a fila \
-                 foi montada e os controles ficam na barra."
-                    .to_owned(),
+                BannerKind::Warning,
+                format!("Engine de reprodução indisponível: {failure}"),
             );
         }
         self.player.play_collection(rows, index);
     }
 
-    /// Atalhos de teclado: Espaço, setas, Ctrl+F e Ctrl+Q.
+    /// Atalhos de teclado: Espaço, setas, Ctrl+F, Ctrl+Q, voltar com
+    /// Escape (qualquer tela com pilha) e seta esquerda nos detalhes.
     fn handle_shortcuts(&mut self, ctx: &Context) {
-        let (space, arrow_left, arrow_right, arrow_up, arrow_down, quit, focus_search) =
+        let (space, arrow_left, arrow_right, arrow_up, arrow_down, quit, focus_search, escape) =
             ctx.input(|input| {
                 (
                     input.key_pressed(egui::Key::Space),
@@ -542,6 +804,7 @@ impl App {
                     input.key_pressed(egui::Key::ArrowDown),
                     input.modifiers.ctrl && input.key_pressed(egui::Key::Q),
                     input.modifiers.ctrl && input.key_pressed(egui::Key::F),
+                    input.key_pressed(egui::Key::Escape),
                 )
             });
         if quit {
@@ -549,11 +812,22 @@ impl App {
             return;
         }
         if focus_search && self.has_session() {
-            self.screen = Screen::Search;
+            self.go_root(Screen::Search);
             ctx.memory_mut(|memory| memory.request_focus(search_edit_id()));
+            return;
+        }
+        // Escape volta da pilha sempre (Escape nunca edita texto).
+        if escape && can_pop(&self.nav_stack) {
+            self.nav_back();
+            return;
         }
         // Teclas simples só valem fora da digitação de texto.
         if ctx.egui_wants_keyboard_input() {
+            return;
+        }
+        // Nos detalhes, a seta esquerda também volta (não faz seek nelas).
+        if arrow_left && is_detail(&self.screen) {
+            self.nav_back();
             return;
         }
         if space {
@@ -598,12 +872,13 @@ impl App {
             .inner;
         for (index, response) in responses.into_iter().enumerate() {
             if response.clicked() {
-                self.screen = match index {
+                let root = match index {
                     0 => Screen::Home,
                     1 => Screen::Library,
                     2 => Screen::Playlists,
                     _ => Screen::Search,
                 };
+                self.go_root(root);
             }
         }
     }
@@ -674,7 +949,7 @@ impl App {
             .map(|row| (row.title.clone(), row.subtitle.clone(), row.duration_secs))
             .collect();
         let current_index = self.player.current_index();
-        egui::Area::new(Id::unique("sitrus_queue_overlay"))
+        let actions = egui::Area::new(Id::unique("sitrus_queue_overlay"))
             .order(egui::Order::Foreground)
             .movable(false)
             .anchor(egui::Align2::RIGHT_BOTTOM, [-16.0_f32, -100.0_f32])
@@ -697,8 +972,15 @@ impl App {
                     theme,
                     Id::unique("sitrus_queue_panel"),
                     &items,
-                );
-            });
+                )
+            })
+            .inner;
+        if let Some(index) = actions.clicked {
+            self.player.move_to(index);
+        }
+        if let Some((from, to)) = actions.reordered {
+            self.player.reorder(from, to);
+        }
     }
 
     /// Conteúdo central por tela + toast.
@@ -712,6 +994,9 @@ impl App {
                     Screen::Library => self.render_library(content, theme),
                     Screen::Playlists => self.render_playlists(content, theme),
                     Screen::Search => self.render_search(content, theme, ctx),
+                    Screen::Artist(_) | Screen::Album(_) | Screen::Playlist(_) => {
+                        self.render_detail(content, theme);
+                    }
                 }
                 self.render_toast(content, theme);
             });
@@ -867,9 +1152,12 @@ impl App {
             return;
         }
 
-        // Adicionados recentemente / Mais tocadas (fallback sem playCount no
-        // modelo de sitrus-api) / Suas playlists.
-        let reversed: Vec<SongRow> = recent.iter().rev().cloned().collect();
+        // “Adicionados recentemente” usa a ordem recebida da API. “Mais
+        // tocadas” só usa contagens reais e ordena pelo playCount decrescente.
+        let most_played = most_played_rows(&self.songs)
+            .into_iter()
+            .take(HOME_SHELF_ITEMS)
+            .collect::<Vec<_>>();
         self.render_song_shelf(
             ui,
             theme,
@@ -878,13 +1166,21 @@ impl App {
             &recent,
         );
         ui.add_space(spacing::X8);
-        self.render_song_shelf(
-            ui,
-            theme,
-            Id::unique("sitrus_shelf_top"),
-            "Mais tocadas",
-            &reversed,
-        );
+        if most_played.is_empty() {
+            ui.label(
+                egui::RichText::new("Contagens de reprodução indisponíveis na resposta da API.")
+                    .font(typography::font_id(type_scale::TypeToken::Footnote))
+                    .color(theme.label_tertiary),
+            );
+        } else {
+            self.render_song_shelf(
+                ui,
+                theme,
+                Id::unique("sitrus_shelf_top"),
+                "Mais tocadas",
+                &most_played,
+            );
+        }
         ui.add_space(spacing::X8);
         self.render_playlist_shelf(
             ui,
@@ -930,7 +1226,7 @@ impl App {
             });
         let _ = output.viewport_width;
         if output.see_all.clicked() {
-            self.screen = Screen::Library;
+            self.go_root(Screen::Library);
         }
         let hits = clicked.borrow().clone();
         if let Some(&index) = hits.first() {
@@ -1007,17 +1303,12 @@ impl App {
                 );
                 let _ = output.viewport_width;
                 if output.see_all.clicked() {
-                    self.screen = Screen::Playlists;
+                    self.go_root(Screen::Playlists);
                 }
                 let hits = clicked.borrow().clone();
-                if !hits.is_empty() {
-                    self.set_toast(
-                        BannerKind::Info,
-                        "Abrir o conteúdo da playlist depende de um endpoint \
-                         ainda não exposto pela camada de API (ver release \
-                         notes)."
-                            .to_owned(),
-                    );
+                if let Some(&index) = hits.first() {
+                    let id = self.playlists[index].id.clone();
+                    self.open_playlist(&id, PlaylistSource::Library);
                 }
             }
         }
@@ -1201,14 +1492,12 @@ impl App {
                         } else {
                             render_playlists_list(scroll, theme, &self.playlists)
                         };
-                        if opened.is_some() {
-                            self.set_toast(
-                                BannerKind::Info,
-                                "Abrir o conteúdo da playlist depende de um \
-                                 endpoint ainda não exposto pela camada de \
-                                 API (ver release notes)."
-                                    .to_owned(),
-                            );
+                        if let Some(index) = opened {
+                            let playlists = &self.playlists;
+                            if let Some(playlist) = playlists.get(index) {
+                                let id = playlist.id.clone();
+                                self.open_playlist(&id, PlaylistSource::Library);
+                            }
                         }
                         scroll.add_space(spacing::X24);
                     });
@@ -1314,44 +1603,449 @@ impl App {
                     .auto_shrink([false, true])
                     .show(ui, |scroll| {
                         scroll.add_space(spacing::X8);
-                        let results = &self.search.results;
-                        let artworks = &self.artworks;
-                        let clicked: Rc<RefCell<Option<usize>>> = Rc::default();
-                        for (index, row) in results.iter().enumerate() {
-                            let artwork = artworks.get(&row.id).cloned();
-                            let response = comps::list_row::song_row(
-                                scroll,
-                                theme,
-                                Id::unique("sitrus_search_row").with(("row", index)),
-                                comps::list_row::ListRow {
-                                    index: Some(index),
-                                    title: &row.title,
-                                    subtitle: Some(&row.subtitle),
-                                    duration_secs: if row.duration_secs > 0 {
-                                        Some(row.duration_secs)
-                                    } else {
-                                        None
-                                    },
-                                    artwork: artwork.as_ref(),
-                                    hover_icon: None,
-                                    hover_tooltip: None,
-                                },
-                                true,
-                                false,
-                            );
-                            if response.clicked() {
-                                *clicked.borrow_mut() = Some(index);
+                        let artists = self.search.artists.clone();
+                        let albums = self.search.albums.clone();
+                        let results = self.search.results.clone();
+                        if artists.is_empty() && albums.is_empty() {
+                            // Só faixas (fallback local ou busca sem artistas
+                            // na resposta): lista direta, sem abas.
+                            let clicked =
+                                render_search_songs(scroll, theme, &results, &self.artworks);
+                            if let Some(index) = clicked {
+                                self.play_rows(&results, index);
                             }
-                        }
-                        let hits = *clicked.borrow();
-                        if let Some(index) = hits {
-                            let rows = self.search.results.clone();
-                            self.play_rows(&rows, index);
+                        } else {
+                            let current_tab = self.search.tab;
+                            let mut tab = None;
+                            padded(scroll, |header| {
+                                tab = comps::tabs::tabs(
+                                    header,
+                                    theme,
+                                    Id::unique("sitrus_search_tabs"),
+                                    &SEARCH_TABS,
+                                    current_tab.min(2),
+                                    true,
+                                );
+                            });
+                            if let Some(choice) = tab {
+                                self.search.tab = choice;
+                            }
+                            scroll.add_space(spacing::X8);
+                            padded(scroll, |body| match current_tab {
+                                0 if !artists.is_empty() => {
+                                    let opened = render_search_artists(body, theme, &artists);
+                                    if let Some(index) = opened {
+                                        let id = artists[index].id.clone();
+                                        self.open_screen(Screen::Artist(id));
+                                    }
+                                }
+                                1 => {
+                                    let opened = render_album_cards(
+                                        body,
+                                        theme,
+                                        Id::unique("sitrus_search_albums"),
+                                        &albums,
+                                        &self.artworks,
+                                        true,
+                                    );
+                                    if let Some(index) = opened {
+                                        let id = albums[index].id.clone();
+                                        self.open_screen(Screen::Album(id));
+                                    }
+                                    if albums.is_empty() {
+                                        body.add_space(spacing::X16);
+                                        comps::empty_state::empty_state(
+                                            body,
+                                            theme,
+                                            Id::unique("sitrus_search_albums_empty"),
+                                            Icon::Grid,
+                                            "Nenhum álbum nesta busca",
+                                            "Faixas podem existir na aba Faixas.",
+                                            None,
+                                        );
+                                    }
+                                }
+                                _ => {
+                                    let clicked =
+                                        render_search_songs(body, theme, &results, &self.artworks);
+                                    if let Some(index) = clicked {
+                                        self.play_rows(&results, index);
+                                    }
+                                    if results.is_empty() {
+                                        body.add_space(spacing::X16);
+                                        comps::empty_state::empty_state(
+                                            body,
+                                            theme,
+                                            Id::unique("sitrus_search_songs_empty"),
+                                            Icon::MusicNote,
+                                            "Nenhuma faixa nesta busca",
+                                            "Artistas e álbuns podem existir nas abas acima.",
+                                            None,
+                                        );
+                                    }
+                                }
+                            });
                         }
                         scroll.add_space(spacing::X24);
                     });
             }
         }
+    }
+
+    /// Página de detalhe (artista, álbum ou playlist): cabeçalho com voltar +
+    /// hero, e corpo com grade de álbuns/tabela de faixas. Os três estados
+    /// (carga, falha e dados) vivem na loja de detalhes.
+    fn render_detail(&mut self, ui: &mut egui::Ui, theme: &Theme) {
+        let Some((prefix, id)) = detail_parts(&self.screen) else {
+            return;
+        };
+        let key = format!("{prefix}:{id}");
+        let page_id = Id::unique(("sitrus_detail", prefix, id.as_str()));
+        let phase = self.details.phase(&key).cloned().unwrap_or_default();
+        match phase {
+            DetailPhase::Loading => self.render_detail_loading(ui, theme, page_id),
+            DetailPhase::Failed(message) => {
+                self.render_detail_failed(ui, theme, page_id, prefix, &id, message);
+            }
+            DetailPhase::Loaded(data) => {
+                self.render_detail_loaded(ui, theme, page_id, id, data);
+            }
+        }
+    }
+
+    /// Detalhe em carregamento: hero de espera + skeletons.
+    fn render_detail_loading(&mut self, ui: &mut egui::Ui, theme: &Theme, page_id: Id) {
+        ScrollArea::vertical()
+            .id_salt(page_id.with("scrollTop"))
+            .auto_shrink([false, true])
+            .show(ui, |scroll| {
+                let hero = comps::hero_header::HeroData::new("Carregando…", None);
+                let header = comps::detail_header::DetailHeader {
+                    hero,
+                    play_enabled: false,
+                    back_enabled: true,
+                    back_label: "Voltar",
+                };
+                let output =
+                    comps::detail_header::detail_header(scroll, theme, page_id, &header, None);
+                if output.back.clicked() {
+                    self.nav_back();
+                }
+                scroll.add_space(spacing::X16);
+                comps::skeleton_row::skeleton_rows(
+                    scroll,
+                    theme,
+                    page_id.with("skeleton"),
+                    SKELETON_ROWS,
+                );
+            });
+    }
+
+    /// Detalhe em falha: banner de erro + "Tentar de novo" com o kind
+    /// original da página (mantém a origem catálogo/biblioteca).
+    fn render_detail_failed(
+        &mut self,
+        ui: &mut egui::Ui,
+        theme: &Theme,
+        page_id: Id,
+        prefix: &str,
+        id: &str,
+        message: String,
+    ) {
+        ScrollArea::vertical()
+            .id_salt(page_id.with("scrollTop"))
+            .auto_shrink([false, true])
+            .show(ui, |scroll| {
+                let hero = comps::hero_header::HeroData::new("Não foi possível carregar", None);
+                let header = comps::detail_header::DetailHeader {
+                    hero,
+                    play_enabled: false,
+                    back_enabled: true,
+                    back_label: "Voltar",
+                };
+                let output =
+                    comps::detail_header::detail_header(scroll, theme, page_id, &header, None);
+                if output.back.clicked() {
+                    self.nav_back();
+                }
+                scroll.add_space(spacing::X12);
+                padded(scroll, |body| {
+                    body.add_space(spacing::X8);
+                    comps::error_banner::error_banner(
+                        body,
+                        theme,
+                        page_id.with("error"),
+                        BannerKind::Error,
+                        &message,
+                        false,
+                    );
+                    body.add_space(spacing::X16);
+                    let retry = comps::empty_state::empty_state(
+                        body,
+                        theme,
+                        page_id.with("retry"),
+                        Icon::Warning,
+                        "Não foi possível carregar esta página",
+                        "Verifique a conexão e tente novamente.",
+                        Some("Tentar de novo"),
+                    );
+                    if let Some(button) = retry
+                        && button.clicked()
+                    {
+                        self.retry_current_detail(prefix, id);
+                    }
+                });
+            });
+    }
+
+    /// Detalhe carregado, despachado pelo tipo de página.
+    fn render_detail_loaded(
+        &mut self,
+        ui: &mut egui::Ui,
+        theme: &Theme,
+        page_id: Id,
+        id: String,
+        data: crate::detail::DetailData,
+    ) {
+        match data {
+            crate::detail::DetailData::Artist {
+                name,
+                albums,
+                songs,
+                tab,
+            } => self.render_detail_artist(ui, theme, page_id, &id, name, albums, songs, tab),
+            crate::detail::DetailData::Album {
+                title,
+                subtitle,
+                artwork_url,
+                songs,
+            } => self.render_detail_collection(
+                ui,
+                theme,
+                page_id,
+                &id,
+                &title,
+                &subtitle,
+                artwork_url,
+                songs,
+            ),
+            crate::detail::DetailData::Playlist {
+                title,
+                subtitle,
+                artwork_url,
+                songs,
+            } => self.render_detail_collection(
+                ui,
+                theme,
+                page_id,
+                &id,
+                &title,
+                &subtitle,
+                artwork_url,
+                songs,
+            ),
+        }
+    }
+
+    /// Página de artista: hero + abas (Álbuns/Músicas). Sem capa disponível
+    /// (modelo do artista não traz artwork): hero usa gradiente do tema.
+    #[allow(clippy::too_many_arguments)]
+    fn render_detail_artist(
+        &mut self,
+        ui: &mut egui::Ui,
+        theme: &Theme,
+        page_id: Id,
+        id: &str,
+        name: String,
+        albums: Vec<AlbumRow>,
+        songs: Vec<SongRow>,
+        tab: usize,
+    ) {
+        ScrollArea::vertical()
+            .id_salt(page_id.with("scrollTop"))
+            .auto_shrink([false, true])
+            .show(ui, |scroll| {
+                let hero = comps::hero_header::HeroData {
+                    title: &name,
+                    subtitle: Some("Artista"),
+                    action_label: None,
+                    gradient: None,
+                };
+                let header = comps::detail_header::DetailHeader::new(hero);
+                let output =
+                    comps::detail_header::detail_header(scroll, theme, page_id, &header, None);
+                if output.back.clicked() {
+                    self.nav_back();
+                }
+                if output.play.clicked() {
+                    if songs.is_empty() {
+                        self.set_toast(
+                            BannerKind::Info,
+                            "Nenhuma música deste artista no catálogo.".to_owned(),
+                        );
+                    } else {
+                        self.play_rows(&songs, 0);
+                        self.queue_open = false;
+                    }
+                }
+                scroll.add_space(spacing::X8);
+
+                let tab = tab.min(1);
+                let mut chosen_tab = None;
+                let opened_album: Rc<RefCell<Option<usize>>> = Rc::default();
+                let clicked_track: Rc<RefCell<Option<usize>>> = Rc::default();
+                padded(scroll, |body| {
+                    chosen_tab = comps::tabs::tabs(
+                        body,
+                        theme,
+                        page_id.with("tabs"),
+                        &["Álbuns", "Músicas"],
+                        tab,
+                        true,
+                    );
+                    body.add_space(spacing::X8);
+                    match tab {
+                        0 => {
+                            let albums = &albums;
+                            let artworks = &self.artworks;
+                            let opened = render_album_cards(
+                                body,
+                                theme,
+                                page_id.with("albums"),
+                                albums,
+                                artworks,
+                                false,
+                            );
+                            if let Some(index) = opened {
+                                *opened_album.borrow_mut() = Some(index);
+                            }
+                            if albums.is_empty() {
+                                body.add_space(spacing::X16);
+                                comps::empty_state::empty_state(
+                                    body,
+                                    theme,
+                                    page_id.with("albums_empty"),
+                                    Icon::Grid,
+                                    "Nenhum álbum encontrado",
+                                    "Este artista não tem álbuns no catálogo.",
+                                    None,
+                                );
+                            }
+                        }
+                        _ => {
+                            let clicked = render_detail_tracks(
+                                body,
+                                theme,
+                                page_id.with("tracks"),
+                                &songs,
+                                None,
+                            );
+                            if let Some(index) = clicked {
+                                *clicked_track.borrow_mut() = Some(index);
+                            }
+                            if songs.is_empty() {
+                                body.add_space(spacing::X16);
+                                comps::empty_state::empty_state(
+                                    body,
+                                    theme,
+                                    page_id.with("songs_empty"),
+                                    Icon::MusicNote,
+                                    "Nenhuma música do artista",
+                                    "O catálogo não devolveu músicas para este artista.",
+                                    None,
+                                );
+                            }
+                        }
+                    }
+                });
+                if let Some(choice) = chosen_tab {
+                    self.details.set_artist_tab(id, choice);
+                }
+                if let Some(index) = *opened_album.borrow()
+                    && let Some(album) = albums.get(index)
+                {
+                    let album_id = album.id.clone();
+                    self.open_screen(Screen::Album(album_id));
+                }
+                if let Some(index) = *clicked_track.borrow() {
+                    self.play_rows(&songs, index);
+                }
+                scroll.add_space(spacing::X24);
+            });
+    }
+
+    /// Página de álbum/playlist: hero com capa + tabela de faixas. A capa
+    /// entra pela pré-carga (chave = id da coleção); `artwork_url` é mantido
+    /// para o pedido de capa do worker.
+    #[allow(clippy::too_many_arguments)]
+    fn render_detail_collection(
+        &mut self,
+        ui: &mut egui::Ui,
+        theme: &Theme,
+        page_id: Id,
+        id: &str,
+        title: &str,
+        subtitle: &str,
+        artwork_url: Option<String>,
+        songs: Vec<SongRow>,
+    ) {
+        ScrollArea::vertical()
+            .id_salt(page_id.with("scrollTop"))
+            .auto_shrink([false, true])
+            .show(ui, |scroll| {
+                let _ = artwork_url;
+                let artwork = self.artworks.get(id).cloned();
+                let gradient = self.gradients.get(id).copied();
+                let hero = comps::hero_header::HeroData {
+                    title,
+                    subtitle: Some(subtitle),
+                    action_label: None,
+                    gradient,
+                };
+                let header = comps::detail_header::DetailHeader::new(hero);
+                let output = comps::detail_header::detail_header(
+                    scroll,
+                    theme,
+                    page_id,
+                    &header,
+                    artwork.as_ref(),
+                );
+                if output.back.clicked() {
+                    self.nav_back();
+                }
+                if output.play.clicked() {
+                    if songs.is_empty() {
+                        self.set_toast(BannerKind::Info, "Nada para tocar aqui.".to_owned());
+                    } else {
+                        self.play_rows(&songs, 0);
+                        self.queue_open = false;
+                    }
+                }
+                scroll.add_space(spacing::X8);
+                if songs.is_empty() {
+                    padded(scroll, |body| {
+                        body.add_space(spacing::X16);
+                        comps::empty_state::empty_state(
+                            body,
+                            theme,
+                            page_id.with("empty"),
+                            Icon::MusicNote,
+                            "Sem faixas nesta página",
+                            "A coleção foi carregada sem faixas para exibir.",
+                            None,
+                        );
+                    });
+                    return;
+                }
+                padded(scroll, |body| {
+                    let clicked =
+                        render_detail_tracks(body, theme, page_id.with("tracks"), &songs, None);
+                    if let Some(index) = clicked {
+                        self.play_rows(&songs, index);
+                    }
+                });
+                scroll.add_space(spacing::X24);
+            });
     }
 
     /// Tela Entrar (login manual sempre; webview atrás da feature).
@@ -1404,6 +2098,18 @@ fn playlist_subtitle(playlist: &PlaylistRow) -> String {
     }
 }
 
+/// Retorna somente faixas com contagem real, em ordem decrescente de playCount.
+/// `sort_by` é estável: empates mantêm a ordem original da API.
+fn most_played_rows(songs: &[SongRow]) -> Vec<SongRow> {
+    let mut rows: Vec<SongRow> = songs
+        .iter()
+        .filter(|row| row.play_count.is_some())
+        .cloned()
+        .collect();
+    rows.sort_by_key(|row| std::cmp::Reverse(row.play_count));
+    rows
+}
+
 impl eframe::App for App {
     /// Frame completa: tema, eventos, atalhos, rail, conteúdo, player e fila.
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
@@ -1430,6 +2136,7 @@ impl eframe::App for App {
             || self.songs_state.is_loading()
             || self.playlists_state.is_loading()
             || self.search.state.is_loading()
+            || self.details.any_loading()
             || self.player.playing()
             || self.toast.is_some()
             || self.login.webview_open;
@@ -1437,6 +2144,145 @@ impl eframe::App for App {
             ctx.request_repaint_after(Duration::from_millis(150));
         }
     }
+}
+
+/// Tabela de faixas de uma página de detalhe: monta as linhas a partir das
+/// `SongRow` da página e devolve o índice clicado, se houver.
+/// `selected_index` destaca a faixa corrente quando a fila é da mesma página.
+fn render_detail_tracks(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    base: Id,
+    songs: &[SongRow],
+    selected_index: Option<usize>,
+) -> Option<usize> {
+    let rows: Vec<comps::track_table::TrackRow<'_>> = songs
+        .iter()
+        .enumerate()
+        .map(|(index, song)| {
+            comps::track_table::TrackRow::new(
+                index,
+                &song.title,
+                Some(&song.subtitle),
+                Some(song.duration_secs),
+            )
+        })
+        .collect();
+    comps::track_table::track_table(ui, theme, base, &rows, selected_index)
+}
+
+/// Linhas dos resultados de faixas (aba Faixas e fallback local); devolve o
+/// índice clicado, se houver.
+fn render_search_songs(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    rows: &[SongRow],
+    artworks: &HashMap<String, TextureHandle>,
+) -> Option<usize> {
+    let clicked: Rc<RefCell<Option<usize>>> = Rc::default();
+    for (index, row) in rows.iter().enumerate() {
+        let artwork = artworks.get(&row.id).cloned();
+        let response = comps::list_row::song_row(
+            ui,
+            theme,
+            Id::unique("sitrus_search_row").with(("row", index)),
+            comps::list_row::ListRow {
+                index: Some(index),
+                title: &row.title,
+                subtitle: Some(&row.subtitle),
+                duration_secs: if row.duration_secs > 0 {
+                    Some(row.duration_secs)
+                } else {
+                    None
+                },
+                artwork: artwork.as_ref(),
+                hover_icon: None,
+                hover_tooltip: None,
+            },
+            true,
+            false,
+        );
+        if response.clicked() {
+            *clicked.borrow_mut() = Some(index);
+        }
+    }
+    *clicked.borrow()
+}
+
+/// Linhas de artistas dos resultados (aba Artistas); devolve o índice aberto.
+fn render_search_artists(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    artists: &[SearchArtistRow],
+) -> Option<usize> {
+    let opened: Rc<RefCell<Option<usize>>> = Rc::default();
+    for (index, artist) in artists.iter().enumerate() {
+        let response = comps::list_row::list_row(
+            ui,
+            theme,
+            Id::unique("sitrus_search_artist").with(("artist", index)),
+            comps::list_row::ListRow {
+                index: None,
+                title: &artist.name,
+                subtitle: Some("Artista"),
+                duration_secs: None,
+                artwork: None,
+                hover_icon: Some(Icon::ChevronRight),
+                hover_tooltip: Some("Abrir artista"),
+            },
+            true,
+            false,
+        );
+        if response.clicked() {
+            *opened.borrow_mut() = Some(index);
+        }
+    }
+    *opened.borrow()
+}
+
+/// Grade de cartões de álbuns (aba Álbuns da busca e página de artista).
+/// `prefer_artist` troca o subtítulo do cartão (artista · ano). Devolve o
+/// índice clicado, se houver.
+fn render_album_cards(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    base: Id,
+    albums: &[AlbumRow],
+    artworks: &HashMap<String, TextureHandle>,
+    prefer_artist: bool,
+) -> Option<usize> {
+    let card_step = comps::album_card::CARD_WIDTH + spacing::X16;
+    let columns = ((ui.available_width().max(280.0) / card_step).floor() as usize).max(1);
+    let opened: Rc<RefCell<Option<usize>>> = Rc::default();
+    egui::Grid::new(base)
+        .spacing([spacing::X16, spacing::X16])
+        .show(ui, |grid| {
+            for (index, album) in albums.iter().enumerate() {
+                let artwork = artworks.get(&album.id).cloned();
+                let subtitle = album.display_subtitle(prefer_artist);
+                let response = comps::album_card::album_card(
+                    grid,
+                    theme,
+                    base.with(("card", index)),
+                    comps::album_card::AlbumCard {
+                        artwork: artwork.as_ref(),
+                        title: &album.title,
+                        subtitle: &subtitle,
+                        enabled: true,
+                        selected: false,
+                        width: comps::album_card::CARD_WIDTH,
+                    },
+                );
+                if response.clicked() {
+                    *opened.borrow_mut() = Some(index);
+                }
+                if (index + 1) % columns == 0 {
+                    grid.end_row();
+                }
+            }
+        });
+    // Grade vazia não emite nada; devolve None quando não houve clique.
+    *opened.borrow()
 }
 
 /// Grade de cards de faixas (modo prateleiras da biblioteca); devolve o
@@ -1588,4 +2434,84 @@ fn render_playlists_list(
         }
     }
     *opened.borrow()
+}
+
+#[cfg(test)]
+mod home_tests {
+    use super::*;
+    use sitrus_core::model::{EntityId, Song};
+
+    /// Mapeamento app → engine: cada pair de cookie vira [`SidecarCookie`]
+    /// (ordem do BTreeMap, `domain: None`) e o media-user-token é repassado.
+    /// Sessão vazia mapeia `None` (nada a transportar ao sidecar).
+    #[test]
+    fn engine_session_maps_cookies_and_media_user_token() {
+        let session = Session {
+            media_user_token: Some("SITRUS-TEST-MEDIA-TOKEN".to_owned()),
+            storefront: "br".to_owned(),
+            cookies: [("citm", "SITRUS-TEST-COOKIE"), ("geo", "br")]
+                .into_iter()
+                .map(|(name, value)| (name.to_owned(), value.to_owned()))
+                .collect::<std::collections::BTreeMap<_, _>>(),
+        };
+        let mapped = engine_session(&session).expect("session with token maps");
+        assert_eq!(
+            mapped.media_user_token.as_deref(),
+            Some("SITRUS-TEST-MEDIA-TOKEN")
+        );
+        assert_eq!(
+            mapped
+                .cookies
+                .iter()
+                .map(|cookie| {
+                    (
+                        cookie.name.as_str(),
+                        cookie.value.as_str(),
+                        cookie.domain.clone(),
+                    )
+                })
+                .collect::<Vec<_>>(),
+            [("citm", "SITRUS-TEST-COOKIE", None), ("geo", "br", None),]
+        );
+        // Ordem do BTreeMap preservada, envelope transportável.
+        let envelope = mapped.envelope();
+        assert!(envelope.contains("SITRUS-TEST-COOKIE"));
+
+        let empty = Session::default();
+        assert!(engine_session(&empty).is_none());
+    }
+
+    fn row(id: &str, play_count: Option<u64>) -> SongRow {
+        SongRow {
+            id: id.to_owned(),
+            title: id.to_owned(),
+            subtitle: String::new(),
+            album_name: String::new(),
+            duration_secs: 0,
+            artwork_url: None,
+            preview_url: None,
+            play_count,
+            song: Song::new(EntityId::new(id), id, EntityId::new("album")),
+        }
+    }
+
+    #[test]
+    fn home_top_shelf_uses_real_play_counts_and_keeps_api_order_on_ties() {
+        let songs = vec![
+            row("recent", Some(2)),
+            row("top", Some(8)),
+            row("unknown", None),
+            row("tie", Some(8)),
+        ];
+        let top = most_played_rows(&songs);
+        assert_eq!(
+            top.iter().map(|song| song.id.as_str()).collect::<Vec<_>>(),
+            ["top", "tie", "recent"]
+        );
+    }
+
+    #[test]
+    fn home_top_shelf_is_empty_when_api_has_no_play_counts() {
+        assert!(most_played_rows(&[row("one", None)]).is_empty());
+    }
 }

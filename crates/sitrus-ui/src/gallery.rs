@@ -9,8 +9,9 @@ use egui::{Align, Id, Layout, Ui};
 use crate::anim;
 use crate::artwork;
 use crate::components::{
-    album_card, button, empty_state, error_banner, hero_header, list_row, modal, navigation_rail,
-    player_bar, search_field, section_header, segmented_control, shelf_row, skeleton_row, toast,
+    album_card, button, detail_header, empty_state, error_banner, hero_header, list_row, modal,
+    navigation_rail, player_bar, search_field, section_header, segmented_control, shelf_row,
+    skeleton_row, tabs, toast, track_table,
 };
 use crate::icons::Icon;
 use crate::theme::{Theme, corner_radius};
@@ -193,6 +194,9 @@ fn preview_card(ui: &mut Ui, theme: &Theme, base: Id) {
                 ui.add_space(spacing::X16);
 
                 rows_section(ui, theme, base);
+                ui.add_space(spacing::X16);
+
+                detail_pages_section(ui, theme, base);
                 ui.add_space(spacing::X16);
 
                 player_section(ui, theme, base);
@@ -693,6 +697,60 @@ fn loading_feedback_section(ui: &mut Ui, theme: &Theme, base: Id) {
     let _ = anim::HOVER_MS; // tokens de animação disponíveis (120/180/240 ms)
 }
 
+/// Seção das páginas de detalhe: DetailHeader, Tabs e TrackTable.
+fn detail_pages_section(ui: &mut Ui, theme: &Theme, base: Id) {
+    ui.label(
+        egui::RichText::new("DetailHeader + Tabs + TrackTable (páginas de artista/álbum/playlist)")
+            .font(typography::font_id(type_scale::TypeToken::Footnote))
+            .color(theme.label_tertiary),
+    );
+
+    // Hero com capa (caso álbum/playlist com artwork).
+    let cover = demo_artwork(ui.ctx(), base.with("detail_art"), 17);
+    let hero = hero_header::HeroData {
+        title: "Midnight Citrus",
+        subtitle: Some("Álbum · Sitrus Studio Players · 2026"),
+        action_label: None,
+        gradient: Some(hero_gradient_of(17)),
+    };
+    let header = detail_header::DetailHeader::new(hero);
+    let output =
+        detail_header::detail_header(ui, theme, base.with("detail_header"), &header, Some(&cover));
+    if output.back.clicked() {
+        toast::trigger_toast(ui, toast_key(), toast::DEFAULT_TOAST_DURATION_SECS);
+    }
+    ui.add_space(spacing::X8);
+
+    // Faixa de abas com estados (ativa sublinhada).
+    let labels = ["Álbuns", "Músicas"];
+    let chosen = tabs::tabs(ui, theme, base.with("tabs"), &labels, 1, true);
+    if chosen == Some(0) {
+        toast::trigger_toast(ui, toast_key(), toast::DEFAULT_TOAST_DURATION_SECS);
+    }
+    ui.add_space(spacing::X8);
+
+    // Tabela de faixas: número, título, duração e hover de tocar.
+    let seconds: [u32; 3] = [212, 187, 0];
+    let titles = ["Citrus Dawn", "Pulso Noturno", "Interlúdio (Silêncio)"];
+    let artists = [
+        "Sitrus Studio Players",
+        "Sitrus Studio Players",
+        "Sitrus Studio Players",
+    ];
+    let rows: Vec<track_table::TrackRow<'_>> = titles
+        .iter()
+        .zip(artists.iter())
+        .enumerate()
+        .map(|(i, (title, artist))| {
+            track_table::TrackRow::new(i, title, Some(artist), Some(seconds[i]))
+        })
+        .collect();
+    let clicked = track_table::track_table(ui, theme, base.with("track_table"), &rows, Some(0));
+    if clicked.is_some() {
+        toast::trigger_toast(ui, toast_key(), toast::DEFAULT_TOAST_DURATION_SECS);
+    }
+}
+
 /// Textura de capa sintética em cache por id.
 fn demo_artwork(ctx: &egui::Context, id: Id, seed: u32) -> egui::TextureHandle {
     let cached: Option<egui::TextureHandle> = ctx.data_mut(|d| d.get_temp(id));
@@ -722,6 +780,9 @@ mod tests {
         for component in [
             "navigation_rail::",
             "hero_header::",
+            "detail_header::",
+            "tabs::tabs",
+            "track_table::track_table",
             "shelf_row::",
             "album_card::",
             "list_row::list_row",

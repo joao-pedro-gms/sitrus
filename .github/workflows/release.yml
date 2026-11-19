@@ -12,7 +12,7 @@ jobs:
     name: Release notes
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Extract version from tag (v0.1.0 -> 0.1.0)
         id: ver
         run: |
@@ -57,7 +57,7 @@ jobs:
     name: AppImage (ubuntu-22.04)
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # jammy: mesma base usada para ligar os binários do AppImage (glibc 2.35,
       # compatível com qualquer desktop x86_64 mais recente, incl. Fedora).
       - name: Install build deps + AppImage tooling
@@ -109,7 +109,7 @@ jobs:
     container:
       image: fedora:latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install build deps + rpmbuild
         run: dnf install -y git curl gcc tar gzip findutils pkg-config openssl-devel alsa-lib-devel webkit2gtk4.1-devel rpm-build
       - name: Install Rust stable (rustup)

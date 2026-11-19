@@ -1,0 +1,25 @@
+[package]
+name = "sitrus-api"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Cliente da API pública da Apple Music para o Sitrus."
+
+[dependencies]
+sitrus-core = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }
+
+# Erros tipados da API (versão já centralizada no workspace).
+thiserror = { workspace = true }
+# Caminho XDG de ~/.local/share para a sessão (versão já resolvida no lock).
+directories = "6.0.0"
+# Extração do bearer por regex dentro do bundle do player web.
+regex = "1.13.2"

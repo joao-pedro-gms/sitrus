@@ -1,0 +1,11 @@
+{
+  "errors": [
+    {
+      "id": "2214-1",
+      "title": "Unauthorized access",
+      "status": "401",
+      "code": "10001",
+      "detail": "Music User Token is required for this resource."
+    }
+  ]
+}

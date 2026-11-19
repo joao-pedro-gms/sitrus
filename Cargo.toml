@@ -1,0 +1,63 @@
+# Raiz do workspace Sitrus.
+# Membros ficam em crates/ e as dependências compartilhadas em [workspace.dependencies].
+
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+# Metadados herdados por todos os membros via `*.workspace = true`.
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT"
+repository = "https://github.com/joao-pedro-gms/sitrus"
+
+# Versões reais do crates.io, confirmadas com `cargo add <crate>@<ver> --dry-run`
+# (e compiladas de verdade pelo `cargo build --workspace`).
+[workspace.dependencies]
+# UI: egui/eframe puro em Rust — sem GTK/webkit/wry (requisito do ambiente).
+eframe = "0.37.0"
+egui = "0.37.0"
+
+# Serialização e utilidades de URL/arquivos locais.
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+toml = "1.2.1"
+url = { version = "2.5.8", features = ["serde"] }
+
+# Cliente HTTP com TLS 100% rustls (sem openssl-sys nativo).
+# reqwest 0.13 renomeou a feature antiga `rustls-tls` para `rustls` (provider aws-lc-rs)
+# e moveu `query()` atrás da feature `query`.
+reqwest = { version = "0.13.5", default-features = false, features = [
+    "charset",
+    "json",
+    "query",
+    "rustls",
+] }
+
+# Runtime assíncrono usado pelo cliente HTTP e, depois, pelo streaming.
+tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread", "time"] }
+
+# Áudio: rodio sobre ALSA nativo + decodificação symphonia (sem GStreamer).
+rodio = "0.23.0"
+symphonia = "0.6.1"
+
+# Erros, logs, diretórios XDG e decodificação de artwork.
+anyhow = "1.0.104"
+thiserror = "2.0.21"
+tracing = "0.1.44"
+directories = "6.0.0"
+image = "0.25.10"
+
+# Crates internos do workspace (referenciados pelos membros com `workspace = true`).
+sitrus-core = { path = "crates/sitrus-core" }
+sitrus-api = { path = "crates/sitrus-api" }
+sitrus-player = { path = "crates/sitrus-player" }
+sitrus-ui = { path = "crates/sitrus-ui" }
+
+# Perfil de release pensado para AppImage/RPM: LTO integral e binário enxuto.
+[profile.release]
+lto = true
+codegen-units = 1
+strip = "symbols"

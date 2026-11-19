@@ -1,0 +1,185 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  release-notes:
+    name: Release notes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract version from tag (v0.1.0 -> 0.1.0)
+        id: ver
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          echo "version=${VER}" >> "$GITHUB_OUTPUT"
+      - name: Write release body
+        run: |
+          VER="${{ steps.ver.outputs.version }}"
+          {
+            echo "## Sitrus ${VER}"
+            echo
+            echo "Cliente nativo de Apple Music no Linux (Rust + egui)."
+            echo
+            echo '### Instalação'
+            echo
+            echo '**AppImage** (qualquer distro x86_64, sem instalar nada):'
+            echo '```sh'
+            echo 'chmod +x Sitrus-x86_64.AppImage'
+            echo './Sitrus-x86_64.AppImage'
+            echo '```'
+            echo
+            echo '**RPM** (Fedora):'
+            echo '```sh'
+            echo 'dnf install ./sitrus-*.rpm'
+            echo '```'
+            echo
+            echo 'O app pede login embutido no primeiro início (webview WebKitGTK'
+            echo 'embutida no AppImage; no RPM ela vem do pacote `webkit2gtk4.1`).'
+            echo
+            echo '---'
+            echo
+            echo 'Sumários de verificação: `SHA256SUMS` contém o SHA-256 das'
+            echo 'artes (AppImage e RPM).'
+          } > release-notes.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: release-notes.md
+          if-no-files-found: error
+
+  release-appimage:
+    name: AppImage (ubuntu-22.04)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      # jammy: mesma base usada para ligar os binários do AppImage (glibc 2.35,
+      # compatível com qualquer desktop x86_64 mais recente, incl. Fedora).
+      - name: Install build deps + AppImage tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev \
+            libwebkit2gtk-4.1-dev \
+            python3-pip \
+            python3-setuptools \
+            python3-apt \
+            fakeroot \
+            squashfs-tools
+      - name: Install Rust stable
+        run: rustup update stable --no-self-update && rustup default stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build (release, feature webview ligado)
+        run: cargo build --release --workspace --all-features
+      - name: Normalize binary name (sitrus-app -> sitrus, se preciso)
+        run: |
+          if [ ! -x target/release/sitrus ] && [ -x target/release/sitrus-app ]; then
+            cp -v target/release/sitrus-app target/release/sitrus
+          fi
+          test -x target/release/sitrus
+      - name: Install appimage-builder
+        run: |
+          pip3 install "appimage-builder>=1.1,<2"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Build AppImage
+        # O recipe em packaging/AppImageBuilder.yml e um molde: __VERSION__ e
+        # substituido pela versao da tag (o molde continua valido como YAML puro).
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed "s/__VERSION__/${VERSION}/g" packaging/AppImageBuilder.yml > /tmp/AppImageBuilder.yml
+          appimage-builder --recipe /tmp/AppImageBuilder.yml
+      - name: Normalize artifact name
+        run: |
+          mv sitrus-*-x86_64.AppImage Sitrus-x86_64.AppImage
+          ls -lh Sitrus-x86_64.AppImage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: appimage
+          path: Sitrus-x86_64.AppImage
+          if-no-files-found: error
+
+  release-rpm:
+    name: RPM (fedora:latest)
+    runs-on: ubuntu-22.04
+    container:
+      image: fedora:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build deps + rpmbuild
+        run: dnf install -y git curl gcc tar gzip findutils pkg-config openssl-devel alsa-lib-devel webkit2gtk4.1-devel rpm-build
+      - name: Install Rust stable (rustup)
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: Build (release, feature webview ligado)
+        run: cargo build --release --workspace --all-features
+      - name: Normalize binary name (sitrus-app -> sitrus, se preciso)
+        run: |
+          if [ ! -x target/release/sitrus ] && [ -x target/release/sitrus-app ]; then
+            cp -v target/release/sitrus-app target/release/sitrus
+          fi
+          test -x target/release/sitrus
+      - name: Build RPM
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          test -f LICENSE || {
+            echo '::error::LICENSE ausente na raiz do repo (necessário para %%license no .spec)'
+            exit 1
+          }
+          # O binario ja compilado (linkado contra as libs do Fedora) entra no
+          # tarball de fontes para o %%install do .spec copiar de target/release.
+          STAGE="$(mktemp -d)"
+          cp -v target/release/sitrus "${STAGE}/sitrus"
+          rm -rf target
+          mkdir -p target/release
+          cp "${STAGE}/sitrus" target/release/sitrus
+          mkdir -p "$HOME/rpmbuild/SOURCES" "$HOME/rpmbuild/SPECS" "$HOME/rpmbuild/BUILD" "$HOME/rpmbuild/RPMS"
+          tar --exclude-vcs --exclude .github \
+            --transform "s,^\./,sitrus-${VER}/," \
+            -czf "$HOME/rpmbuild/SOURCES/sitrus-${VER}.tar.gz" .
+          rpmbuild -bb \
+            --define "sitrus_version ${VER}" \
+            --define "_topdir $HOME/rpmbuild" \
+            packaging/sitrus.spec
+          cp -v "$HOME"/rpmbuild/RPMS/x86_64/*.rpm "${GITHUB_WORKSPACE}/"
+          rpm --checksig "${GITHUB_WORKSPACE}"/sitrus-*.rpm
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rpm
+          path: sitrus-*.rpm
+          if-no-files-found: error
+
+  publish:
+    name: SHA256SUMS + GitHub Release
+    needs: [release-notes, release-appimage, release-rpm]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: '*'
+          merge-multiple: true
+          path: dist
+      - name: Generate SHA256SUMS
+        run: |
+          cd dist
+          sha256sum "Sitrus-x86_64.AppImage" sitrus-*.rpm > SHA256SUMS
+          sha256sum --check SHA256SUMS
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Sitrus ${{ github.ref_name }}
+          body_path: dist/release-notes.md
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/Sitrus-x86_64.AppImage
+            dist/sitrus-*.rpm
+            dist/SHA256SUMS

@@ -1,0 +1,8 @@
+#EXTM3U
+#EXT-X-VERSION:7
+#EXT-X-MAP:URI="init.mp4"
+#EXTINF:4.5,
+segment-001.m4s
+#EXTINF:3.25,
+segment-002.m4s
+#EXT-X-ENDLIST

@@ -1,0 +1,60 @@
+# Recipe do AppImage do Sitrus (appimage-builder v1).
+#
+# Este arquivo e um MOLDE: `version: __VERSION__` e substituido pela versao
+# da tag v* pelo release.yml via sed antes do build
+#   sed "s/__VERSION__/${VERSION}/g" packaging/AppImageBuilder.yml > /tmp/AppImageBuilder.yml
+# (assim o molde continua YAML puro e parseavel sem tags custom).
+#
+# O webview de login (feature `webview`, wry/WebKitGTK) e incluido no bundle
+# via pacote Ubuntu libwebkit2gtk-4.1-0 (closura transitiva resolvida pelo
+# appimage-builder), para o AppImage rodar em Fedora sem instalar nada.
+
+version: 1
+
+script:
+  - rm -rf AppDir || true
+  - mkdir -p AppDir/usr/bin AppDir/usr/share/applications AppDir/usr/share/metainfo AppDir/usr/share/icons/hicolor/scalable/apps
+  - cp target/release/sitrus AppDir/usr/bin/sitrus
+  - cp packaging/sitrus.desktop AppDir/usr/share/applications/sitrus.desktop
+  - cp packaging/sitrus.appdata.xml AppDir/usr/share/metainfo/sitrus.appdata.xml
+  - cp packaging/sitrus.svg AppDir/usr/share/icons/hicolor/scalable/apps/sitrus.svg
+
+AppDir:
+  path: ./AppDir
+
+  app_info:
+    id: io.github.joaopedrogms.sitrus
+    name: sitrus
+    icon: sitrus
+    version: __VERSION__
+    exec: sitrus
+    exec_args: $@
+
+  apt:
+    arch: amd64
+    sources:
+      - sourceline: 'deb [arch=amd64] http://archive.ubuntu.com/ubuntu/ jammy main universe'
+        key_url: 'http://keyserver.ubuntu.com/pks/lookup?op=get&search=0x871920D1991BC93C'
+    include:
+      - libasound2
+      - libgtk-3-0
+      - libwebkit2gtk-4.1-0
+      - libsoup-3.0-0
+      - gstreamer1.0-plugins-base
+      - gstreamer1.0-plugins-good
+    exclude: []
+
+  files:
+    include: []
+    exclude:
+      - usr/share/man
+      - usr/share/doc
+      - usr/share/info
+      - usr/share/gtk-doc
+      - usr/share/pkgconfig
+      - usr/share/gettext
+
+AppImage:
+  arch: x86_64
+  update-information: guess
+  sign-key: None

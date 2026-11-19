@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fmt:
+    name: fmt (rustfmt)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust stable
+        run: rustup update stable --no-self-update && rustup default stable
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+  clippy:
+    name: clippy (-D warnings)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build deps (alsa + WebKitGTK, para o feature `webview`)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libwebkit2gtk-4.1-dev
+      - name: Install Rust stable
+        run: rustup update stable --no-self-update && rustup default stable
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+  test:
+    name: test (default features)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build deps (alsa)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev
+      - name: Install Rust stable
+        run: rustup update stable --no-self-update && rustup default stable
+      - uses: Swatinem/rust-cache@v2
+      # Testes rodam nos features default (o feature `webview` nao tem testes
+      # executaveis em headless); a compilacao de todas as features ja fica
+      # coberta pelo job clippy (--all-features).
+      - name: cargo test
+        run: cargo test --workspace
+
+  build-release:
+    name: build (release, all features)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      # ubuntu-22.04 (glibc 2.35) e o mesmo SO dos builds de release: o binario
+      # roda em qualquer Linux x86_64 >= jammy.
+      - name: Install build deps (alsa + WebKitGTK)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libwebkit2gtk-4.1-dev
+      - name: Install Rust stable
+        run: rustup update stable --no-self-update && rustup default stable
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo build --release
+        run: cargo build --release --workspace --all-features
+      - name: Normalize binary name (sitrus-app -> sitrus, se preciso)
+        run: |
+          if [ ! -x target/release/sitrus ] && [ -x target/release/sitrus-app ]; then
+            cp -v target/release/sitrus-app target/release/sitrus
+          fi
+          test -x target/release/sitrus
+
+  actionlint:
+    name: actionlint (workflows)
+    runs-on: ubuntu-latest
+    env:
+      ACTIONLINT_VERSION: '1.7.7'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download actionlint
+        run: |
+          curl -sSfL \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
+            -o /tmp/actionlint.tar.gz
+          tar -xzf /tmp/actionlint.tar.gz -C /tmp actionlint
+      - name: actionlint -shellcheck=
+        run: /tmp/actionlint -shellcheck= .github/workflows/*.yml
+
+  cargo-deny:
+    name: cargo-deny (advisories, licenses, bans, sources)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust stable
+        run: rustup update stable --no-self-update && rustup default stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      - name: cargo deny check
+        run: cargo deny check

@@ -1,0 +1,39 @@
+name: Pedido de feature
+description: Sugira uma funcionalidade ou melhoria para o Sitrus
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Antes de pedir: confira o escopo da v1 e os não-objetivos no
+        [brief](../../docs/brief.md) e no [CHANGELOG](../../CHANGELOG.md).
+  - type: textarea
+    id: problema
+    attributes:
+      label: Problema ou necessidade
+      description: Qual problema essa feature resolve para você?
+      placeholder: Sempre que eu..., preciso... porque...
+    validations:
+      required: true
+  - type: textarea
+    id: solucao
+    attributes:
+      label: Solução proposta
+      description: Como você imagina que isso funcionaria no app?
+    validations:
+      required: true
+  - type: textarea
+    id: alternativas
+    attributes:
+      label: Alternativas consideradas
+      description: Outras formas de resolver, workarounds ou apps de referência.
+    validations:
+      required: false
+  - type: textarea
+    id: contexto
+    attributes:
+      label: Contexto adicional
+      description: Mockups, links ou qualquer outra informação útil.
+    validations:
+      required: false

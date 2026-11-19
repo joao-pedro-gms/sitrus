@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.joaopedrogms.sitrus</id>
+  <name>Sitrus</name>
+  <summary>Cliente nativo de Apple Music para Linux</summary>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="io.github.joaopedrogms">
+    <name>João Pedro</name>
+  </developer>
+
+  <description>
+    <p>
+      Sitrus é um cliente nativo (Rust + egui) para Apple Music no Linux:
+      login embutido por webview usando os cookies da sessão do usuário,
+      navegação pela biblioteca e playlists do usuário e player completo
+      com fila, seek e volume.
+    </p>
+    <p>
+      Projeto independente e não afiliado à Apple. Interface inspirada na
+      linguagem visual Apple, desenhada originalmente para egui.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">sitrus.desktop</launchable>
+  <provides>
+    <binary>sitrus</binary>
+  </provides>
+
+  <url type="homepage">https://github.com/joao-pedro-gms/sitrus</url>
+  <url type="bugtracker">https://github.com/joao-pedro-gms/sitrus/issues</url>
+
+  <content_rating type="oars-1.1"/>
+
+  <releases>
+    <release version="0.1.0" date="2026-11-19">
+      <description>
+        <p>Versão inicial: login por webview, biblioteca, playlists e player.</p>
+      </description>
+    </release>
+  </releases>
+</component>

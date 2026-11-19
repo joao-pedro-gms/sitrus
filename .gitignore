@@ -1,0 +1,11 @@
+# Artefatos de build do Rust
+/target/
+
+# Pacotes de embalagem gerados localmente
+*.AppImage
+
+# Saídas intermediárias da empacotagem (AppImage/RPM)
+/packaging/build/
+
+# Obs.: Cargo.lock é versionado de propósito — este workspace produz aplicativos,
+# não bibliotecas publicadas no crates.io.

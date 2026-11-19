@@ -1,0 +1,20 @@
+[package]
+name = "sitrus-player"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Reprodutor de áudio do Sitrus (rodio sobre ALSA + symphonia)."
+
+[features]
+default = ["hls"]
+hls = ["dep:reqwest"]
+
+[dependencies]
+rodio = { workspace = true, default-features = false, features = ["playback", "tracing"] }
+reqwest = { workspace = true, features = ["blocking"], optional = true }
+symphonia = { workspace = true, default-features = false, features = ["aac", "flac", "isomp4", "mp3", "pcm", "wav"] }
+thiserror = { workspace = true }
+url = { workspace = true }
+

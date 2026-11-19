@@ -1,0 +1,48 @@
+# Configuração do cargo-deny (`cargo deny check`): licenças, advisories, bans e fontes.
+# Execute localmente com: cargo install cargo-deny && cargo deny check
+
+[graph]
+# Alvo primário: Linux x86_64 (AppImage/RPM). Mantenha em sincronia com a CI.
+targets = [{ triple = "x86_64-unknown-linux-gnu" }]
+all-features = false
+
+[advisories]
+version = 2
+# Advisory de severidade média ou riscos menores vira aviso, não erro;
+# bloqueie o release revisando antes de cada corte.
+yanked = "warn"
+# eframe puxa accesskit_unix→zbus e a stack de fontes: unmaintained sem substituto.
+unmaintained = "warn"
+
+[licenses]
+version = 2
+confidence-threshold = 0.8
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Zlib",
+    "MPL-2.0",
+    "CDLA-Permissive-2.0",
+    "OpenSSL",
+    # epaint_default_fonts (dep do eframe) licencia (MIT OR Apache-2.0) AND OFL-1.1 AND Ubuntu-font-1.0
+    "OFL-1.1",
+    "Ubuntu-font-1.0",
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "warn"
+deny = []
+skip = []
+
+[sources]
+unknown-registry = "warn"
+unknown-git = "warn"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

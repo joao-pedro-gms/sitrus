@@ -1,0 +1,27 @@
+{
+  "data": [
+    {
+      "id": "lPlaylist-01",
+      "type": "library-playlists",
+      "href": "/v1/me/library/playlists/lPlaylist-01",
+      "attributes": {
+        "name": "Foco",
+        "canEdit": true
+      }
+    },
+    {
+      "id": "lPlaylist-02",
+      "type": "library-playlists",
+      "href": "/v1/me/library/playlists/lPlaylist-02",
+      "attributes": {
+        "name": "Viagem",
+        "canEdit": false
+      }
+    }
+  ],
+  "meta": {
+    "total": 2,
+    "order": "name",
+    "limit": 2
+  }
+}

@@ -1,0 +1,35 @@
+[package]
+name = "sitrus-app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Aplicativo executável do Sitrus: ponto de entrada e juntamento dos módulos."
+
+[features]
+default = []
+# Login do player web em janela própria (wry/WebKitGTK). Requer webkit2gtk-4.1
+# instalado no sistema (ausente na máquina de desenvolvimento; a build com a
+# feature só valida em CI com as dependências de sistema instaladas).
+# Fora da feature, nada deste crate referência wry/tao.
+webview = ["dep:wry", "dep:tao"]
+
+[dependencies]
+sitrus-core = { workspace = true }
+sitrus-api = { workspace = true }
+sitrus-player = { workspace = true }
+sitrus-ui = { workspace = true }
+eframe = { workspace = true }
+egui = { workspace = true }
+# Requisições diretas do app (capas de artwork e busca de catálogo enquanto o
+# envio permanece stub em sitrus-api); TLS via rustls, sem openssl.
+reqwest = { workspace = true }
+tokio = { workspace = true }
+url = { workspace = true }
+# Tipo DynamicImage trafegado nos eventos de artwork (mesma versão da ui).
+image = { workspace = true }
+
+# Login por webview: somente com a feature `webview` (opcional, não default).
+wry = { version = "0.57", optional = true }
+tao = { version = "0.37", optional = true }

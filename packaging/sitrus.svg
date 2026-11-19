@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Ícone original do Sitrus: fatia de laranja sobre quadrado escuro,
+     com acento vermelho (#FA243C) do sistema de design. Sem marcas de
+     terceiros. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Sitrus">
+  <title>Sitrus</title>
+
+  <rect width="512" height="512" rx="112" fill="#1D1D1F"/>
+
+  <circle cx="264" cy="268" r="146" fill="#FF9F0A"/>
+  <circle cx="264" cy="268" r="118" fill="#FFB340"/>
+
+  <g stroke="#FFE8C2" stroke-width="10" stroke-linecap="round" fill="none">
+    <line x1="264" y1="156" x2="264" y2="380"/>
+    <line x1="152" y1="268" x2="376" y2="268"/>
+    <line x1="185" y1="189" x2="343" y2="347"/>
+    <line x1="343" y1="189" x2="185" y2="347"/>
+  </g>
+
+  <circle cx="264" cy="268" r="18" fill="#FA243C"/>
+
+  <path d="M 300 108 C 336 70 392 68 424 92 C 404 130 348 140 300 108 Z" fill="#34C759"/>
+</svg>

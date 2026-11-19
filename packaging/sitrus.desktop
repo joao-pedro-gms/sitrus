@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Sitrus
+GenericName=Cliente de Apple Music
+Comment=Cliente nativo de Apple Music para Linux
+Exec=sitrus %U
+Icon=sitrus
+Terminal=false
+Categories=AudioVideo;Audio;Music;Player;
+Keywords=music;apple music;player;streaming;
+StartupWMClass=sitrus
+MimeType=audio/*;

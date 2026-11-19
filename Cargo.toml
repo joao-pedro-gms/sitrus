@@ -3,7 +3,7 @@
 
 [workspace]
 resolver = "3"
-members = ["crates/*"]
+members = ["crates/*", "spike/eme-probe"]
 
 # Metadados herdados por todos os membros via `*.workspace = true`.
 [workspace.package]

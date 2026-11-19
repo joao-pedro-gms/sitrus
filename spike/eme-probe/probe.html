@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sitrus EME probe</title>
+  </head>
+  <body>
+    <h1>Sitrus WebKitGTK EME probe</h1>
+    <p>Requesting Widevine and ClearKey access with AAC audio capability.</p>
+    <pre id="status">Running EME probes…</pre>
+    <script>
+      (async () => {
+        const status = document.getElementById("status");
+        const report = (line) => {
+          status.textContent += `\n${line}`;
+          window.ipc.postMessage(line);
+        };
+        const configuration = {
+          initDataTypes: ["cenc"],
+          audioCapabilities: [
+            { contentType: 'audio/mp4; codecs="mp4a.40.2"' },
+          ],
+        };
+
+        async function probe(keySystem) {
+          let result;
+          if (!navigator.requestMediaKeySystemAccess) {
+            result = "API_UNAVAILABLE";
+          } else {
+            try {
+              await navigator.requestMediaKeySystemAccess(keySystem, [configuration]);
+              result = "SUPPORTED";
+            } catch (error) {
+              result = error && error.name === "NotSupportedError"
+                ? "NotSupported"
+                : (error && error.name) || "Error";
+            }
+          }
+          report(`EME_PROBE keySystem=${keySystem} result=${result}`);
+        }
+
+        await Promise.all([
+          probe("com.widevine.alpha"),
+          probe("org.w3.clearkey"),
+        ]);
+        report("EME_PROBE_DONE");
+      })().catch(() => {
+        window.ipc.postMessage("EME_PROBE_FATAL page_script_error");
+      });
+    </script>
+  </body>
+</html>

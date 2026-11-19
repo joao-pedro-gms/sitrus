@@ -7,5 +7,8 @@
 # Saídas intermediárias da empacotagem (AppImage/RPM)
 /packaging/build/
 
+# Saída local do probe EME (a cópia de CI é publicada como artifact).
+/spike/eme-probe/eme-probe.log
+
 # Obs.: Cargo.lock é versionado de propósito — este workspace produz aplicativos,
 # não bibliotecas publicadas no crates.io.

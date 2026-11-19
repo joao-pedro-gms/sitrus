@@ -1,4 +1,4 @@
-# sitrus-app
+# sitrus
 
 Binário do Sitrus: janela eframe/egui com as telas produto (direção B),
 integração com `sitrus-api` (biblioteca + sessão), `sitrus-player`
@@ -7,10 +7,10 @@ integração com `sitrus-api` (biblioteca + sessão), `sitrus-player`
 ## Rodar
 
 ```sh
-cargo run -p sitrus-app                  # janela principal
-cargo run -p sitrus-app -- --gallery     # galeria do design system (sitrus-ui)
-cargo run -p sitrus-app -- --login-manual
-cargo run -p sitrus-app -- --version     # -V / --help
+cargo run -p sitrus                  # janela principal
+cargo run -p sitrus -- --gallery     # galeria do design system (sitrus-ui)
+cargo run -p sitrus -- --login-manual
+cargo run -p sitrus -- --version     # -V / --help
 ```
 
 Requer um display Wayland/X11 (a janela abre com `eframe::run_native`, tema
@@ -21,15 +21,15 @@ janela 1280×820, mínima 980×620).
 
 - **Manual (sempre disponível)**: copie o cabeçalho `Cookie:` de um pedido a
   `amp-api.music.apple.com` no DevTools do navegador e cole na tela de login
-  (`sitrus-app --login-manual` ou a tela "Entrar" que abre sem sessão). A
+  (`sitrus --login-manual` ou a tela "Entrar" que abre sem sessão). A
   sessão é persistida em `~/.local/share/sitrus/session.json` (0600) pelo
   `sitrus-api`.
-- **Webview (feature opcional `webview`)**: `sitrus-app` abre
+- **Webview (feature opcional `webview`)**: `sitrus` abre
   `music.apple.com` em janela própria (wry/WebKitGTK via tao) e captura a
   sessão quando o media-user-token aparece nos cookies. Compila apenas com:
 
   ```sh
-  cargo build -p sitrus-app --features webview   # exige webkit2gtk-4.1 + dbus-1
+  cargo build -p sitrus --features webview   # exige webkit2gtk-4.1 + dbus-1
   ```
 
   A build default **não** referencia `wry`/`tao` em nenhum ponto fora da

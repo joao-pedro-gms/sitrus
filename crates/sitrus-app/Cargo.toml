@@ -7,6 +7,13 @@ license.workspace = true
 repository.workspace = true
 description = "Aplicativo executável do Sitrus: ponto de entrada e juntamento dos módulos."
 
+# O binário sai como `sitrus` (não `sitrus-app`): RPM, AppImage e os comandos
+# documentados usam esse nome. Os passos de normalização do release.yml
+# (cp sitrus-app -> sitrus) tornam-se no-ops inofensivos.
+[[bin]]
+name = "sitrus"
+path = "src/main.rs"
+
 [features]
 default = []
 # Login do player web em janela própria (wry/WebKitGTK). Requer webkit2gtk-4.1

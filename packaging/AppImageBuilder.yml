@@ -27,7 +27,10 @@ AppDir:
     name: sitrus
     icon: sitrus
     version: __VERSION__
-    exec: sitrus
+    # Caminho relativo à raiz do AppDir (appimage-builder resolve o binário
+    # por este caminho em setup_runtime; "sitrus" sozinho falhava com
+    # FileNotFoundError em AppDir/sitrus).
+    exec: usr/bin/sitrus
     exec_args: $@
 
   apt:

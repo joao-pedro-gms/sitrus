@@ -23,7 +23,7 @@ use crate::app::{MIN_WINDOW_SIZE, WINDOW_SIZE, WINDOW_TITLE};
 
 /// Ajuda curta exibida em `--help` e em erros de uso.
 const USAGE: &str = "\
-Uso: sitrus-app [opção]
+Uso: sitrus [opção]
 
 Sem opção abre a janela principal do Sitrus.
 
@@ -55,7 +55,7 @@ fn run_main_window(manual_login: bool) -> ExitCode {
     match eframe::run_native(WINDOW_TITLE, options, Box::new(creator)) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("sitrus-app: a janela não pôde ser aberta: {error:?}");
+            eprintln!("sitrus: a janela não pôde ser aberta: {error:?}");
             ExitCode::FAILURE
         }
     }
@@ -75,7 +75,7 @@ fn run_gallery() -> ExitCode {
     match eframe::run_native("Sitrus — Galeria", options, Box::new(creator)) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("sitrus-app: a galeria não pôde ser aberta: {error:?}");
+            eprintln!("sitrus: a galeria não pôde ser aberta: {error:?}");
             ExitCode::FAILURE
         }
     }
@@ -91,7 +91,7 @@ fn run_login_webview_child() -> ExitCode {
 
 #[cfg(not(feature = "webview"))]
 fn run_login_webview_child() -> ExitCode {
-    eprintln!("sitrus-app: --login-webview exige a feature `webview`");
+    eprintln!("sitrus: --login-webview exige a feature `webview`");
     ExitCode::FAILURE
 }
 
@@ -100,7 +100,7 @@ fn main() -> ExitCode {
     match args.as_slice() {
         [] => run_main_window(false),
         [arg] if arg == "--version" || arg == "-V" => {
-            println!("sitrus-app {}", env!("CARGO_PKG_VERSION"));
+            println!("sitrus {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
         }
         [arg] if arg == "--gallery" => run_gallery(),
